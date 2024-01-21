@@ -1,0 +1,15 @@
+- hosts: bsd_servers
+  tasks:
+    - name: setup jail
+      become: true
+      when: inventory_hostname == jail_host
+      block:
+        - name: install packages inside jail
+          community.general.pkgng:
+            name: "{{ jail_packages }}"
+            state: present
+            jail: "{{ jail_name }}"
+
+        - name: run commands inside jail
+          ansible.builtin.shell: "jexec -u root {{ jail_name }} {{ item }}"
+          with_items: "{{ jail_commands }}"

@@ -1,0 +1,21 @@
+- hosts: bsd_servers
+  tasks:
+    - name: delete jail
+      become: true
+      when: inventory_hostname == jail_host
+      block:
+        - name: stop jail
+          shell: service jail stop {{ jail_name }}
+
+        - name: delete jail config file
+          ansible.builtin.file:
+            path: "/etc/jail.conf.d/{{ jail_name }}.conf"
+            state: absent
+
+        - name: Remove all chflags from jail files
+          shell: chflags -R 0 {{ containers_path }}/{{ jail_name }}
+
+        - name: Remove jail directory
+          ansible.builtin.file:
+            path: "{{ containers_path }}/{{ jail_name }}"
+            state: absent

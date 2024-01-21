@@ -1,0 +1,52 @@
+- hosts: "bsd_servers"
+  tasks:
+    - name: init jail
+      become: true
+      when: inventory_hostname == jail_host
+      block:
+        - name: wipe jail directory
+          ansible.builtin.file:
+            path: "{{ containers_path }}/{{ jail_name }}"
+            state: absent
+
+        - name: Create directory for jail
+          ansible.builtin.file:
+            path: "{{ containers_path }}/{{ jail_name }}"
+            state: directory
+            owner: root
+            group: wheel
+            mode: 0750
+
+        - name: extract base files to jail
+          ansible.builtin.unarchive:
+            src: "{{ media_path }}/14.0-RELEASE-base.txz"
+            dest: "{{ containers_path }}/{{ jail_name }}/"
+            remote_src: yes
+            extra_opts:
+              - "--unlink"
+
+        - name: copy resolv.conf to jail
+          ansible.builtin.copy:
+            remote_src: yes
+            src: /etc/resolv.conf
+            dest: "{{ containers_path }}/{{ jail_name }}/etc/resolv.conf"
+
+        - name: copy localtime to jail
+          ansible.builtin.copy:
+            remote_src: yes
+            src: /etc/localtime
+            dest: "{{ containers_path }}/{{ jail_name }}/etc/localtime"
+
+        - name: update to latest patch version
+          ansible.builtin.shell: freebsd-update -b {{ containers_path }}/{{ jail_name }}/ fetch install
+
+        - name: Create config file for jail
+          ansible.builtin.template:
+            src: templates/jail.conf.j2
+            dest: "/etc/jail.conf.d/{{ jail_name }}.conf"
+            owner: root
+            group: wheel
+            mode: 0644
+
+        - name: start jail
+          ansible.builtin.shell: service jail start {{ jail_name }}
