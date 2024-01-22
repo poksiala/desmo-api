@@ -1,5 +1,5 @@
-from fastapi import FastAPI
-from typing import Dict
+from fastapi import FastAPI, Header, HTTPException
+from typing import Dict, Annotated, Union, List
 from .fsm import JailStateMachine
 import logging
 import sys
@@ -54,7 +54,12 @@ async def read_root():
     "/jails",
     status_code=201,
 )
-async def create_jail(req: models.CreateJailRequest) -> models.FullJailInfo:
+async def create_jail(
+    req: models.CreateJailRequest,
+    x_api_key: Annotated[Union[str, None], Header()] = None,
+) -> models.FullJailInfo:
+    if not x_api_key or x_api_key != os.environ["API_KEY"]:
+        raise HTTPException(status_code=401, detail="Unauthorized")
     first_part = secrets.token_hex(2)
     second_part = secrets.token_hex(2)
     name = f"{req.name}-{first_part}-{second_part}"
@@ -83,6 +88,12 @@ async def create_jail(req: models.CreateJailRequest) -> models.FullJailInfo:
     )
 
 
+@app.get("/jails")
+async def get_servers() -> List[models.JailInfo]:
+    jails = await database.get_jails()
+    return jails
+
+
 @app.get("/jails/{name}")
 async def get_server(name: str) -> models.FullJailInfo | Dict[str, str]:
     if name not in STATE_MACHINES:
@@ -101,7 +112,11 @@ async def get_server(name: str) -> models.FullJailInfo | Dict[str, str]:
 
 
 @app.delete("/jails/{name}")
-async def delete_server(name: str) -> Dict[str, str]:
+async def delete_server(
+    name: str, x_api_key: Annotated[Union[str, None], Header()] = None
+) -> Dict[str, str]:
+    if not x_api_key or x_api_key != os.environ["API_KEY"]:
+        raise HTTPException(status_code=401, detail="Unauthorized")
     if name not in STATE_MACHINES:
         return {"error": "jail does not exist"}
     try:

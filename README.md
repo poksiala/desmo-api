@@ -16,4 +16,5 @@ NETWORK_PREFIX=2001:1234:1234:1234
 SSH_KEY_FILE=/path/to/id_rsa
 DATABASE_DSN=postgres://user:password@host:5432/db
 RUNNER_HOSTS=bsd-1.example.com,bsd-2.example.com,bsd-3.example.com
+API_KEY=supersecret
 ```
