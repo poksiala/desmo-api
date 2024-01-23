@@ -47,7 +47,8 @@ def run_ansible_playbook(name, playbook: str, inventory: dict):
         ssh_key = f.read()
     return ansible_runner.run_async(
         private_data_dir=data_dir,
-        project_dir=f"{os.getcwd()}/ansible/project",
+        project_dir=os.environ.get("ANSIBLE_PROJECT_DIR")
+        or f"{os.getcwd()}/ansible/project",
         playbook=playbook,
         inventory=inventory,
         ssh_key=ssh_key,
