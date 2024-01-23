@@ -1,0 +1,10 @@
+all:
+  vars:
+    ansible_python_interpreter: /usr/local/bin/python
+    jails_path: /usr/local/jails
+    media_path: "{{ jails_path }}/media"
+    containers_path: "{{ jails_path }}/containers"
+  children:
+    api_servers:
+      hosts:
+        bsd-1.hki-rok.atk.works:

@@ -1,0 +1,173 @@
+- hosts: api_servers
+  vars:
+    jail_name: "desmoapi"
+    jail_ipv6: "2001:14ba:4ad6:c307::de50"
+    ansible_project_dir: /usr/local/etc/desmoapi/ansible
+  tasks:
+    - name: setup jail
+      become: true
+      block:
+        - name: include vars from secrets.yaml
+          include_vars: secrets.yaml
+
+        - name: Install utilities
+          become: true
+          ansible.builtin.pkgng:
+            name:
+              - vim
+              - htop
+              - wget
+              - gtar
+
+        - name: Enable Jails
+          become: true
+          community.general.sysrc:
+            name: jail_enable
+            value: "YES"
+
+        - name: Start jails on boot
+          become: true
+          community.general.sysrc:
+            name: jail_parallel_start
+            value: "YES"
+
+        - name: Create zfs dataset for jails
+          become: true
+          community.general.zfs:
+            name: zroot/jails
+            state: present
+            extra_zfs_properties:
+              mountpoint: "{{ jails_path }}"
+
+        - name: Create zfs dataset for media
+          become: true
+          community.general.zfs:
+            name: "zroot/jails/media"
+            state: present
+
+        - name: Create zfs dataset for containers
+          become: true
+          community.general.zfs:
+            name: "zroot/jails/containers"
+            state: present
+
+        - name: Download base media
+          become: true
+          ansible.builtin.get_url:
+            url: "https://download.freebsd.org/ftp/releases/amd64/amd64/14.0-RELEASE/base.txz"
+            dest: "{{ media_path }}/14.0-RELEASE-base.txz"
+
+        - name: stop jail
+          shell: service jail stop {{ jail_name }}
+          ignore_errors: yes
+
+        - name: Remove all chflags from jail files
+          shell: chflags -R 0 {{ containers_path }}/{{ jail_name }}
+          ignore_errors: yes
+
+        - name: wipe existing jail
+          ansible.builtin.file:
+            path: "{{ containers_path }}/{{ jail_name }}"
+            state: absent
+
+        - name: Create directory for jail
+          ansible.builtin.file:
+            path: "{{ containers_path }}/{{ jail_name }}"
+            state: directory
+            owner: root
+            group: wheel
+            mode: 0750
+
+        - name: extract base files to jail
+          ansible.builtin.unarchive:
+            src: "{{ media_path }}/14.0-RELEASE-base.txz"
+            dest: "{{ containers_path }}/{{ jail_name }}/"
+            remote_src: yes
+            extra_opts:
+              - "--unlink"
+
+        - name: copy resolv.conf to jail
+          ansible.builtin.copy:
+            remote_src: yes
+            src: /etc/resolv.conf
+            dest: "{{ containers_path }}/{{ jail_name }}/etc/resolv.conf"
+
+        - name: copy localtime to jail
+          ansible.builtin.copy:
+            remote_src: yes
+            src: /etc/localtime
+            dest: "{{ containers_path }}/{{ jail_name }}/etc/localtime"
+
+        - name: update to latest patch version
+          ansible.builtin.shell: freebsd-update -b {{ containers_path }}/{{ jail_name }}/ fetch install
+
+        - name: Touch jail.conf
+          become: true
+          ansible.builtin.file:
+            path: "/etc/jail.conf"
+            state: touch
+
+        - name: create config under /etc/jail.conf.d/
+          become: true
+          ansible.builtin.template:
+            src: "templates/jail.conf.j2"
+            dest: "/etc/jail.conf.d/{{ jail_name }}.conf"
+            mode: 0644
+
+        - name: write variables to /etc/profile
+          ansible.builtin.lineinfile:
+            path: "{{ containers_path }}/{{ jail_name }}/etc/profile"
+            line: "export {{ item.key }}={{ item.value }}"
+          with_items: "{{ secret_env | dict2items }}"
+
+        - name: create ansible project directories
+          ansible.builtin.file:
+            path: "{{ containers_path }}/{{ jail_name }}{{ item }}"
+            state: directory
+            owner: root
+            group: wheel
+            mode: 0750
+          with_items:
+            - /usr/local/etc/desmoapi/
+            - "{{ ansible_project_dir }}"
+            - "{{ ansible_project_dir }}/templates"
+
+        - name: copy ansible project files
+          ansible.builtin.copy:
+            src: "{{ item }}"
+            dest: "{{ containers_path }}/{{ jail_name }}/{{ ansible_project_dir }}"
+          with_items:
+            - project/create_jail.yaml
+            - project/delete_jail.yaml
+            - project/setup_jail.yaml
+
+        - name: copy ansible templates
+          ansible.builtin.copy:
+            src: "{{ item }}"
+            dest: "{{ containers_path }}/{{ jail_name }}{{ ansible_project_dir }}/templates"
+          with_items:
+            - project/templates/jail.conf.j2
+
+        - name: write id_rsa to file
+          ansible.builtin.copy:
+            content: "{{ id_rsa }}"
+            dest: "{{ containers_path }}/{{ jail_name }}/usr/local/etc/desmoapi/id_rsa"
+            mode: 0600
+
+        - name: start jail
+          ansible.builtin.shell: service jail start {{ jail_name }}
+
+        - name: install packages inside jail
+          community.general.pkgng:
+            name:
+              - python311
+              - rust
+            state: present
+            jail: "{{ jail_name }}"
+
+        - name: Install python packages
+          ansible.builtin.shell: "jexec -u root {{ jail_name }} {{ item }}"
+          with_items:
+            - python3.11 -m ensurepip --upgrade
+            - python3.11 -m pip install uvicorn
+            - python3.11 -m pip install desmo-api
