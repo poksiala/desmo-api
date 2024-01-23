@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 
 
 def get_inventory(vars: Optional[dict] = None) -> dict:
+    runner_hosts = os.environ["RUNNER_HOSTS"].split(",")
+    hosts = {host: {} for host in runner_hosts}
     return {
         "all": {
             "vars": {
@@ -27,15 +29,7 @@ def get_inventory(vars: Optional[dict] = None) -> dict:
                 "ansible_ssh_common_args": "-o StrictHostKeyChecking=no",
                 **(vars or {}),
             },
-            "children": {
-                "bsd_servers": {
-                    "hosts": {
-                        "bsd-1.hki-rok.atk.works": {},
-                        "bsd-2.hki-rok.atk.works": {},
-                        "bsd-3.hki-rok.atk.works": {},
-                    },
-                }
-            },
+            "children": {"bsd_servers": {"hosts": hosts}},
         }
     }
 
@@ -53,6 +47,15 @@ def run_ansible_playbook(name, playbook: str, inventory: dict):
         inventory=inventory,
         ssh_key=ssh_key,
     )
+
+
+async def prepare_runners():
+    inventory = get_inventory()
+    _thread, runner = run_ansible_playbook("runners", "prepare_runners.yaml", inventory)
+    while runner.rc is None:
+        await asyncio.sleep(1)
+    if runner.rc != 0:
+        raise Exception(f"Ansible failed with {runner.rc}")
 
 
 async def jail_provisioning(jail_info: models.JailInfo):

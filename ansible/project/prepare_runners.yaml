@@ -1,0 +1,61 @@
+- hosts: bsd_servers
+  tasks:
+    - name: Install utilities
+      become: true
+      ansible.builtin.pkgng:
+        name:
+          - vim
+          - htop
+          - wget
+          - gtar
+
+    - name: Enable Jails
+      become: true
+      community.general.sysrc:
+        name: jail_enable
+        value: "YES"
+
+    - name: Start jails on boot
+      become: true
+      community.general.sysrc:
+        name: jail_parallel_start
+        value: "NO"
+
+    - name: Create zfs dataset for jails
+      become: true
+      community.general.zfs:
+        name: zroot/jails
+        state: present
+        extra_zfs_properties:
+          mountpoint: "{{ jails_path }}"
+
+    - name: Create zfs dataset for media
+      become: true
+      community.general.zfs:
+        name: "zroot/jails/media"
+        state: present
+
+    - name: Create zfs dataset for containers
+      become: true
+      community.general.zfs:
+        name: "zroot/jails/containers"
+        state: present
+
+    - name: Download base media
+      become: true
+      ansible.builtin.get_url:
+        url: "{{ item.url }}"
+        dest: "{{ media_path }}/{{ item.name }}"
+      with_items:
+        - name: 12.4-RELEASE-base.txz
+          url: https://download.freebsd.org/ftp/releases/amd64/amd64/12.4-RELEASE/base.txz
+        - name: 13.2-RELEASE-base.txz
+          url: https://download.freebsd.org/ftp/releases/amd64/amd64/13.2-RELEASE/base.txz
+        - name: 14.0-RELEASE-base.txz
+          url: https://download.freebsd.org/ftp/releases/amd64/amd64/14.0-RELEASE/base.txz
+
+    - name: Touch jail.conf
+      become: true
+      ansible.builtin.file:
+        path: "/etc/jail.conf"
+        state: touch

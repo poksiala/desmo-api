@@ -11,6 +11,7 @@ import os
 from . import db, models
 import random
 import secrets
+from .actions import prepare_runners
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 logger = logging.getLogger("api")
@@ -25,6 +26,8 @@ database = db.DB(os.environ["DATABASE_DSN"])
 async def lifespan(app: FastAPI):
     logger.info("Running migrations")
     await database.migrate()
+    logger.info("Preparing runners")
+    await prepare_runners()
     logger.info("Loading servers from database")
     jails = await database.get_jails()
     logger.info("Loaded %s jails from database", len(jails))
