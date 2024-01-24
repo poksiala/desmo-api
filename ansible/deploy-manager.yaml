@@ -140,6 +140,7 @@
             - project/create_jail.yaml
             - project/delete_jail.yaml
             - project/setup_jail.yaml
+            - project/prepare_runners.yaml
 
         - name: copy ansible templates
           ansible.builtin.copy:

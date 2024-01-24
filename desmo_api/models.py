@@ -1,21 +1,24 @@
 from pydantic import BaseModel, ValidationError, validator
-from typing import Literal
+from typing import Optional
 
 
 class JailInfo(BaseModel):
+    base: str
     name: str
     state: str
     ip: str
     host: str
 
 
-class FullJailInfo(JailInfo):
+class FullJailInfoResponse(JailInfo):
     packages: list[str] = []
     commands: list[str] = []
+    dns: str
 
 
 class CreateJailRequest(BaseModel):
     name: str
+    base: str = "14.0-RELEASE-base"
     packages: list[str] = []
     commands: list[str] = []
 
@@ -30,3 +33,22 @@ class CreateJailRequest(BaseModel):
         if v[0].isdigit():
             raise ValueError("server_name must not start with a number")
         return v
+
+
+class CreatePrisonRequest(CreateJailRequest):
+    replicas: int = 1
+
+
+class PrisonInfo(BaseModel):
+    replicas: int
+    base: str
+    name: str
+
+
+class PrisonInfoResponse(PrisonInfo):
+    dns: str
+    jails: list[JailInfo] = []
+
+
+class UpdatePrisonRequest(BaseModel):
+    replicas: Optional[int] = None

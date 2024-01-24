@@ -2,6 +2,7 @@ import asyncio
 from collections.abc import Coroutine
 import logging
 from statemachine import StateMachine, State
+from typing import Set
 
 
 from . import actions
@@ -22,7 +23,7 @@ class JailStateMachine(StateMachine):
         self._dns_client = dns_client
         self._name = name
         self._db = database
-        self._tasks = set()
+        self._tasks: Set[asyncio.Task] = set()
 
         super().__init__()
 
@@ -120,5 +121,9 @@ class JailStateMachine(StateMachine):
 
     def on_enter_terminated(self):
         logger.info("Jail %s terminated", self._name)
+        for task in self._tasks:
+            task.cancel()
+
+    def stop(self):
         for task in self._tasks:
             task.cancel()
