@@ -67,6 +67,12 @@ MIGRATIONS = [
         ALTER TABLE jail ADD COLUMN prison_name text REFERENCES prison(name) ON DELETE CASCADE DEFAULT NULL;
         """,
     ],
+    [
+        """CREATE table namespace (name text PRIMARY KEY);""",
+        """INSERT INTO namespace (name) VALUES ('default') ON CONFLICT DO NOTHING;""",
+        """ALTER TABLE jail ADD COLUMN namespace text REFERENCES namespace(name) ON DELETE RESTRICT DEFAULT 'default';""",
+        """ALTER TABLE prison ADD COLUMN namespace text REFERENCES namespace(name) ON DELETE RESTRICT DEFAULT 'default';""",
+    ],
 ]
 
 
