@@ -172,9 +172,5 @@ async def update_prison(
     if not x_api_key or x_api_key != os.environ["API_KEY"]:
         raise HTTPException(status_code=401, detail="Unauthorized")
     if req.replicas is not None:
-        if req.replicas < 0:
-            return {"error": "replicas must be positive"}
-        if req.replicas > 3:
-            return {"error": "replicas must be less or equal to 3"}
         await GUARD.update_prison_replicas(name, req.replicas)
     return {"status": "ok"}

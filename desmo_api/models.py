@@ -1,5 +1,7 @@
-from pydantic import BaseModel, ValidationError, validator
+from pydantic import BaseModel, validator
 from typing import Optional
+
+MAX_REPLICAS = 3
 
 
 class JailInfo(BaseModel):
@@ -38,6 +40,12 @@ class CreateJailRequest(BaseModel):
 class CreatePrisonRequest(CreateJailRequest):
     replicas: int = 1
 
+    @validator("replicas")
+    def replicas_validator(cls, v: int):
+        if v < 1 or v > MAX_REPLICAS:
+            raise ValueError(f"replicas must be between 1 and {MAX_REPLICAS}")
+        return v
+
 
 class PrisonInfo(BaseModel):
     replicas: int
@@ -52,3 +60,9 @@ class PrisonInfoResponse(PrisonInfo):
 
 class UpdatePrisonRequest(BaseModel):
     replicas: Optional[int] = None
+
+    @validator("replicas")
+    def replicas_validator(cls, v: Optional[int] = None):
+        if v is not None and (v < 1 or v > MAX_REPLICAS):
+            raise ValueError(f"replicas must be between 1 and {MAX_REPLICAS}")
+        return v
