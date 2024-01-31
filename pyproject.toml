@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "desmo-api"
-version = "0.3.0"
+version = "0.4.0"
 description = ""
 authors = ["Panu Oksiala <panu@oksiala.fi>"]
 readme = "README.md"
@@ -14,6 +14,7 @@ aiohttp = {extras = ["speedups"], version = "^3.9.0"}
 aiodns = "^3.1.1"
 ansible = "^8.0.0"
 asyncpg = "^0.29.0"
+python-multipart = "^0.0.6"
 
 
 [tool.poetry.group.dev.dependencies]

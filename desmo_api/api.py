@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, UploadFile, File
 from fastapi.responses import RedirectResponse
 from typing import Dict, Annotated, Union, List
 from .fsm import JailStateMachine
@@ -12,6 +12,7 @@ import os
 from . import db, models
 from .actions import prepare_runners
 from .prison_guard import PrisonGuard
+from tarfile import TarFile
 
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
@@ -29,7 +30,7 @@ async def lifespan(app: FastAPI):
     await database.migrate()
     logger.info("Preparing runners")
     await prepare_runners()
-    logger.info("Loading servers from database")
+    logger.info("Loading jails from database")
     await GUARD.initialize()
     yield
     GUARD.stop()
@@ -174,3 +175,16 @@ async def update_prison(
     if req.replicas is not None:
         await GUARD.update_prison_replicas(name, req.replicas)
     return {"status": "ok"}
+
+
+@app.post("/v1/prisons")
+async def create_prisonf_from_file(
+    image: UploadFile = File(...),
+    x_api_key: Annotated[Union[str, None], Header()] = None,
+):
+    if not x_api_key or x_api_key != os.environ["API_KEY"]:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    tar = TarFile.open(fileobj=image.file, mode="r:gz")
+    members = tar.getmembers()
+    names = [member.name for member in members]
+    return {"filename": image.filename, "members": names}
