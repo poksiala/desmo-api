@@ -1,7 +1,7 @@
 - hosts: api_servers
   vars:
     jail_name: "desmoapi"
-    jail_ipv6: "2001:14ba:4ad6:c307::de50"
+    jail_ipv6: "2001:14ba:6e51:c307::de50"
     ansible_project_dir: /usr/local/etc/desmoapi/ansible
   tasks:
     - name: setup jail
@@ -10,9 +10,20 @@
         - name: include vars from secrets.yaml
           include_vars: secrets.yaml
 
+        - name: make sure /usr/local/etc/pkg/repos exists
+          ansible.builtin.file:
+            path: /usr/local/etc/pkg/repos
+            state: directory
+
+        - name: install FreeBSD.conf
+          ansible.builtin.template:
+            src: "templates/FreeBSD.conf.j2"
+            dest: "/usr/local/etc/pkg/repos/FreeBSD.conf"
+            mode: 0644
+
         - name: Install utilities
           become: true
-          ansible.builtin.pkgng:
+          community.general.pkgng:
             name:
               - vim
               - htop
@@ -98,6 +109,17 @@
             src: /etc/localtime
             dest: "{{ containers_path }}/{{ jail_name }}/etc/localtime"
 
+        - name: make sure /usr/local/etc/pkg/repos exists inside jail
+          ansible.builtin.file:
+            path: "{{ containers_path }}/{{ jail_name }}/usr/local/etc/pkg/repos"
+            state: directory
+
+        - name: copy FreeBSD.conf to jail
+          ansible.builtin.copy:
+            remote_src: yes
+            src: /usr/local/etc/pkg/repos/FreeBSD.conf
+            dest: "{{ containers_path }}/{{ jail_name }}/usr/local/etc/pkg/repos/FreeBSD.conf"
+
         - name: update to latest patch version
           ansible.builtin.shell: freebsd-update -b {{ containers_path }}/{{ jail_name }}/ fetch install
 
@@ -119,6 +141,14 @@
             path: "{{ containers_path }}/{{ jail_name }}/etc/profile"
             line: "export {{ item.key }}={{ item.value }}"
           with_items: "{{ secret_env | dict2items }}"
+          loop_control:
+            label: "{{ item.key }}"
+
+        - name: write service file
+          ansible.builtin.template:
+            src: "templates/desmoapi.j2"
+            dest: "{{ containers_path }}/{{ jail_name }}/etc/rc.d/desmoapi"
+            mode: 0744
 
         - name: create ansible project directories
           ansible.builtin.file:
@@ -165,10 +195,20 @@
               - rust
             state: present
             jail: "{{ jail_name }}"
+          retries: 3
+          delay: 3
+          register: install_result
+          until: install_result is success
 
         - name: Install python packages
           ansible.builtin.shell: "jexec -u root {{ jail_name }} {{ item }}"
           with_items:
             - python3.11 -m ensurepip --upgrade
             - python3.11 -m pip install uvicorn
-            - python3.11 -m pip install desmo-api
+            - python3.11 -m pip install desmo-api==0.3.0
+
+        - name: enable desmoapi service
+          ansible.builtin.shell: jexec -u root {{ jail_name }} sysrc desmoapi_enable="YES"
+
+        - name: Start desmoapi service
+          ansible.builtin.shell: jexec -u root {{ jail_name }} service desmoapi start

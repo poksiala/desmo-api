@@ -1,0 +1,12 @@
+#!/bin/sh
+. /etc/rc.subr
+. /etc/profile
+export PATH="$PATH:/usr/local/bin"
+
+name=desmoapi
+rcvar=desmoapi_enable
+command="/usr/sbin/daemon"
+command_args="-p /var/run/${name}.pid /usr/local/bin/python3.11 -m uvicorn desmo_api:app --host :: --port 9939"
+
+load_rc_config $name
+run_rc_command "$1"
