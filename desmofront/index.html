@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script defer data-domain="desmofylakas.cloud" src="https://vakoilu.atk.works/js/script.js"></script>
+    <style>
+        body {
+            font-family: 'Courier New', Courier, monospace;
+            line-height: 1.6;
+            margin: 20px;
+        }
+
+        h1 {
+            color: #268bd2;
+        }
+
+        h2 {
+            color: #cb4b16;
+        }
+
+        h3 {
+            color: #859900;
+        }
+
+        pre {
+            background-color: #eee;
+            padding: 10px;
+            border-radius: 5px;
+        }
+
+        code {
+            font-family: 'Courier New', Courier, monospace;
+            color: #2aa198;
+        }
+
+        .options,
+        .commands,
+        .examples {
+            margin-bottom: 20px;
+        }
+    </style>
+    <title>Desmofylakas Man Page</title>
+</head>
+<body>
+
+    <h1>DESMOFYLAKAS(1) Manual Page</h1>
+
+    <h2>NAME</h2>
+    <p>desmofylakas - Kubernetes-like orchestrator for FreeBSD Jails</p>
+
+    <h2>SYNOPSIS</h2>
+    <pre>desmofylakas [OPTIONS] COMMAND [ARGS...]</pre>
+
+    <h2>DESCRIPTION</h2>
+    <p>
+        Desmofylakas is a orchestration tool designed specifically for FreeBSD Jails,
+        inspired by the principles of Kubernetes. It provides a robust and flexible platform
+        for managing isolated stateless applications in a scalable and efficient manner.
+    </p>
+
+    <h2>OPTIONS</h2>
+    <pre class="options">
+        -h, --help
+                   Show this message and exit.
+
+        -v, --version
+                   Display the version information.
+    </pre>
+
+    <h2>FEATURES</h2>
+    <pre class="commands">
+        create
+                   Create deployments for any application.
+
+        scale
+                   Scale the number of jails for a given deployment.
+
+        expose
+                   Expose a deployment or service to the external network.
+
+        describe
+                   Display detailed information about a deployment, pod, or service.
+
+        logs
+                   View the logs of any jail.
+
+        events
+                   View full event history for any deployment.
+    </pre>
+
+    <h2>SEE ALSO</h2>
+    <p>For more information, please visit the official Desmofylakas documentation at <a href="https://desmofylakas.cloud" target="_blank">https://desmofylakas.cloud</a></p>
+
+    <h2>AUTHOR</h2>
+    <p>Desmofylakas is developed by the Desmofylakas Core team.</p>
+
+    <h2>REPORTING BUGS</h2>
+    <p>Please do not report any bugs or issues.</p>
+
+    <h2>COPYRIGHT</h2>
+    <p>This software is distributed under the BSD 3-Clause License.</p>
+
+</body>
+</html>
