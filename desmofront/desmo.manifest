@@ -5,4 +5,4 @@
  (build-commands
   . #("sysrc nginx_enable=YES"))
  (start-command
-  . "service nginx start"))
+  . ("service nginx start")))
