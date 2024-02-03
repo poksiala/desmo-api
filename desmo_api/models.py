@@ -1,5 +1,5 @@
-from pydantic import BaseModel, validator
-from typing import Optional
+from pydantic import BaseModel, validator, Field
+from typing import Optional, List
 
 MAX_REPLICAS = 3
 
@@ -13,16 +13,16 @@ class JailInfo(BaseModel):
 
 
 class FullJailInfoResponse(JailInfo):
-    packages: list[str] = []
-    commands: list[str] = []
+    packages: List[str] = []
+    commands: List[str] = []
     dns: str
 
 
 class CreateJailRequest(BaseModel):
     name: str
     base: str = "14.0-RELEASE-base"
-    packages: list[str] = []
-    commands: list[str] = []
+    packages: List[str] = []
+    commands: List[str] = []
 
     @validator("name")
     def server_name_validator(cls, v: str):
@@ -55,7 +55,7 @@ class PrisonInfo(BaseModel):
 
 class PrisonInfoResponse(PrisonInfo):
     dns: str
-    jails: list[JailInfo] = []
+    jails: List[JailInfo] = []
 
 
 class UpdatePrisonRequest(BaseModel):
@@ -66,3 +66,9 @@ class UpdatePrisonRequest(BaseModel):
         if v is not None and (v < 1 or v > MAX_REPLICAS):
             raise ValueError(f"replicas must be between 1 and {MAX_REPLICAS}")
         return v
+
+
+class PrisonManifest(BaseModel):
+    packages: List[str]
+    build_commands: List[str] = Field(alias="build-commands")
+    start_command: str = Field(alias="start-command")

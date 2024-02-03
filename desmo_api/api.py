@@ -194,6 +194,7 @@ async def create_prisonf_from_file(
     if manifest_json is None:
         raise HTTPException(400, "Invalid manifest.json")
 
-    manifest = json.load(manifest_json)
+    manifest = models.PrisonManifest(**json.load(manifest_json))
+
     names = [member.name for member in members]
     return {"filename": image.filename, "members": names, "manifest": manifest}
