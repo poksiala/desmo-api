@@ -1,8 +1,6 @@
-((packages
-  . #("nginx"))
- (files
-  . #("nginx.conf:/usr/local/etc/nginx/nginx.conf" "index.html:/usr/local/www/nginx/index.html"))
- (build-commands
-  . #("sysrc nginx_enable=YES"))
- (start-command
-  . ("service nginx start")))
+((packages . #("nginx"))
+ (files .
+        #("nginx.conf:/usr/local/etc/nginx/nginx.conf"
+          "index.html:/usr/local/www/nginx/index.html"))
+ (build-commands . #("sysrc nginx_enable=YES"))
+ (start-command . "service nginx start"))
