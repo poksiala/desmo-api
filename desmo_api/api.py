@@ -13,6 +13,7 @@ from . import db, models
 from .actions import prepare_runners
 from .prison_guard import PrisonGuard
 from tarfile import TarFile
+import json
 
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
@@ -29,7 +30,7 @@ async def lifespan(app: FastAPI):
     logger.info("Running migrations")
     await database.migrate()
     logger.info("Preparing runners")
-    await prepare_runners()
+    # await prepare_runners()
     logger.info("Loading jails from database")
     await GUARD.initialize()
     yield
@@ -184,7 +185,15 @@ async def create_prisonf_from_file(
 ):
     if not x_api_key or x_api_key != os.environ["API_KEY"]:
         raise HTTPException(status_code=401, detail="Unauthorized")
-    tar = TarFile.open(fileobj=image.file, mode="r:gz")
-    members = tar.getmembers()
+    with TarFile.open(fileobj=image.file, mode="r") as tar:
+        members = tar.getmembers()
+        try:
+            manifest_json = tar.extractfile("./__desmometa/manifest.json")
+        except KeyError:
+            raise HTTPException(400, "manifest.json is missing")
+    if manifest_json is None:
+        raise HTTPException(400, "Invalid manifest.json")
+
+    manifest = json.load(manifest_json)
     names = [member.name for member in members]
-    return {"filename": image.filename, "members": names}
+    return {"filename": image.filename, "members": names, "manifest": manifest}
