@@ -87,8 +87,11 @@ class DB:
 
     async def _get_conn(self) -> asyncpg.Connection:
         if self._conn is None:
-            self._conn = await asyncpg.connect(self.dsn)
-        return self._conn
+            conn = await asyncpg.connect(self.dsn)
+            self._conn = conn
+            return conn
+        else: 
+            return self._conn
 
     async def migrate(self):
         conn = await self._get_conn()
