@@ -6,7 +6,7 @@ authors = ["Panu Oksiala <panu@oksiala.fi>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = ">=3.9.18,<3.13"
+python = ">=3.11.9,<3.13"
 ansible-runner = "^2.3.4"
 python-statemachine = "^2.1.2"
 fastapi = "^0.104.1"
