@@ -77,7 +77,7 @@ async def jail_provisioning(jail_info: models.JailInfo):
 async def start_jail_provisioning(fsm: JailStateMachine, database: db.DB, name: str):
     logger.info("Starting provisioning for jail %s", name)
     try:
-        jail_info = await database.get_jail(name)
+        jail_info = await database.get_jail_or_raise(name)
         await jail_provisioning(jail_info=jail_info)
         fsm.jail_provisioned()
     except Exception as e:
@@ -113,7 +113,7 @@ async def start_dns_provisioning(
 ):
     logger.info("Starting DNS provisioning for jail %s", name)
     try:
-        jail_info = await database.get_jail(name)
+        jail_info = await database.get_jail_or_raise(name)
         await dns_provisioning(dns_client, jail_info)
         fsm.dns_provisioned()
     except Exception as e:
@@ -141,7 +141,7 @@ async def jail_setup(
 async def start_jail_setup(fsm: JailStateMachine, database: db.DB, name: str):
     logger.info("Starting jail setup for jail %s", name)
     try:
-        jail_info = await database.get_jail(name)
+        jail_info = await database.get_jail_or_raise(name)
         packages = await database.get_jail_packages(name)
         commands = await database.get_jail_commands(name)
         await jail_setup(jail_info=jail_info, packages=packages, commands=commands)
@@ -177,7 +177,7 @@ async def jail_removal(jail_info: models.JailInfo):
 async def start_jail_removal(fsm: JailStateMachine, database: db.DB, name: str):
     logger.info("Starting removal of jail %s", name)
     try:
-        jail_info = await database.get_jail(name)
+        jail_info = await database.get_jail_or_raise(name)
         await jail_removal(jail_info)
         fsm.jail_removed()
     except Exception as e:

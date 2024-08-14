@@ -120,12 +120,18 @@ class DB:
         rows = await conn.fetch("SELECT base, name, state, ip, host FROM jail;")
         return [models.JailInfo(**row) for row in rows]
 
-    async def get_jail(self, name: str) -> models.JailInfo:
+    async def get_jail(self, name: str) -> models.JailInfo | None:
         conn = await self._get_conn()
         row = await conn.fetchrow(
             "SELECT base, name, state, ip, host FROM jail WHERE name = $1;", name
         )
-        return models.JailInfo(**row)
+        return None if row is None else models.JailInfo(**row)
+
+    async def get_jail_or_raise(self, name: str) -> models.JailInfo:
+        res = await self.get_jail(name=name)
+        if res is None:
+            raise KeyError(f"Jail {name} does not exist in database")
+        return res
 
     async def get_jail_packages(self, name: str) -> List[str]:
         conn = await self._get_conn()
@@ -225,12 +231,18 @@ class DB:
             order,
         )
 
-    async def get_prison(self, name: str) -> models.PrisonInfo:
+    async def get_prison(self, name: str) -> models.PrisonInfo | None:
         conn = await self._get_conn()
         row = await conn.fetchrow(
             "SELECT name, base, replicas FROM prison WHERE name = $1;", name
         )
-        return models.PrisonInfo(**row)
+        return None if row is None else models.PrisonInfo(**row)
+
+    async def get_prison_or_raise(self, name: str) -> models.PrisonInfo:
+        res = await self.get_prison(name=name)
+        if res is None:
+            raise KeyError(f"Prison {name} does not exist in database")
+        return res
 
     async def delete_prison(self, name: str) -> None:
         conn = await self._get_conn()

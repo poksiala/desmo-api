@@ -61,6 +61,7 @@ async def create_jail(
         raise HTTPException(status_code=401, detail="Unauthorized")
     name = await GUARD.create_jail(req.name, req.base, req.packages, req.commands)
     jail_info = await database.get_jail(name)
+    assert jail_info is not None
     return models.FullJailInfoResponse(
         name=jail_info.name,
         state=jail_info.state,
@@ -81,9 +82,9 @@ async def get_jails() -> List[models.JailInfo]:
 
 @app.get("/jails/{name}")
 async def get_jail(name: str) -> models.FullJailInfoResponse | Dict[str, str]:
-    if name not in GUARD.state_machines:
-        return {"error": "server does not exist"}
     jail = await database.get_jail(name)
+    if jail is None:
+        return {"error": "Jail does not exist"}
     packages = await database.get_jail_packages(name)
     commands = await database.get_jail_commands(name)
     return models.FullJailInfoResponse(
@@ -140,8 +141,10 @@ async def get_prisons() -> List[models.PrisonInfo]:
 
 
 @app.get("/prisons/{name}")
-async def get_prison(name: str) -> models.PrisonInfoResponse:
+async def get_prison(name: str) -> models.PrisonInfoResponse | Dict[str, str]:
     prison = await database.get_prison(name)
+    if prison is None:
+        return {"error": "Prison does not exist"}
     jails = await database.get_prison_jails(name)
     return models.PrisonInfoResponse(
         name=prison.name,
@@ -159,6 +162,8 @@ async def delete_prison(
     if not x_api_key or x_api_key != os.environ["API_KEY"]:
         raise HTTPException(status_code=401, detail="Unauthorized")
     prison = await database.get_prison(name)
+    if prison is None:
+        return {"error": "prison does not exist"}
     if prison.replicas > 0:
         return {"error": "prison is not empty"}
     await database.delete_prison(name)
