@@ -3,6 +3,7 @@ import aiohttp
 from typing import Dict, List, Optional
 
 from pydantic import BaseModel
+import os
 
 
 class TxtVerification(BaseModel):
@@ -43,8 +44,15 @@ class RecordResponse(BaseModel):
 
 
 class HCloudDNS:
-    def __init__(self, token: str, api_domain="dns.hetzner.com"):
-        self._token = token
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(HCloudDNS, cls).__new__(cls)
+        return cls._instance
+
+    def __init__(self, api_domain="dns.hetzner.com"):
+        self._token = os.environ["HCLOUD_DNS_KEY"]
         self.api_domain = api_domain
         self._session: Optional[aiohttp.ClientSession] = None
 

@@ -19,7 +19,7 @@ import json
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 logger = logging.getLogger("api")
 
-DNS_CLIENT = HCloudDNS(os.environ["HCLOUD_DNS_KEY"])
+DNS_CLIENT = HCloudDNS()
 database = db.DB(os.environ["DATABASE_DSN"])
 
 GUARD = PrisonGuard(database, DNS_CLIENT)

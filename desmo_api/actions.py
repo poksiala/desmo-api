@@ -114,7 +114,7 @@ async def start_dns_provisioning(
     logger.info("Starting DNS provisioning for jail %s", name)
     try:
         jail_info = await database.get_jail_or_raise(name)
-        await dns_provisioning(dns_client, jail_info)
+        await dns_provisioning(hcloud_dns.HCloudDNS(), jail_info)
         fsm.dns_provisioned()
     except Exception as e:
         logger.error("DNS provisioning failed for server %s", name, exc_info=e)
@@ -199,7 +199,7 @@ async def start_dns_deprovisioning(
 ):
     logger.info("Starting DNS deprovisioning for jail %s", name)
     try:
-        await dns_deprovisioning(dns_client, name)
+        await dns_deprovisioning(hcloud_dns.HCloudDNS(), name)
         await database.set_jail_state(
             name, "terminated"
         )  # Have to do this here because the tasks will be cancelled
