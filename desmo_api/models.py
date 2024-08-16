@@ -1,7 +1,13 @@
 from pydantic import BaseModel, validator, Field
 from typing import Optional, List
+from .enums import JailEvent
 
 MAX_REPLICAS = 3
+
+
+class JailEventQueueObject(BaseModel):
+    name: str
+    event: JailEvent
 
 
 class JailInfo(BaseModel):
@@ -63,7 +69,7 @@ class UpdatePrisonRequest(BaseModel):
 
     @validator("replicas")
     def replicas_validator(cls, v: Optional[int] = None):
-        if v is not None and (v < 1 or v > MAX_REPLICAS):
+        if v is not None and (v < 0 or v > MAX_REPLICAS):
             raise ValueError(f"replicas must be between 1 and {MAX_REPLICAS}")
         return v
 

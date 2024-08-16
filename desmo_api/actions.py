@@ -7,10 +7,9 @@ import os
 import ansible_runner
 from typing import TYPE_CHECKING, Optional
 
-if TYPE_CHECKING:
-    from .fsm import JailStateMachine
 
 from . import hcloud_dns, db, models
+from .enums import JailEvent
 
 logger = logging.getLogger(__name__)
 
@@ -75,15 +74,15 @@ async def jail_provisioning(jail_info: models.JailInfo):
         raise Exception(f"Ansible failed with {runner.rc}")
 
 
-async def start_jail_provisioning(fsm: JailStateMachine, database: db.DB, name: str):
+async def start_jail_provisioning(database: db.DB, name: str) -> None:
     logger.info("Starting provisioning for jail %s", name)
     try:
         jail_info = await database.get_jail_or_raise(name)
         await jail_provisioning(jail_info=jail_info)
-        fsm.jail_provisioned()
+        await database.queue_jail_event(name, JailEvent.jail_provisioned)
     except Exception as e:
         logger.error("Jail provisioning failed for %s", name, exc_info=e)
-        fsm.jail_provisioning_failed()
+        await database.queue_jail_event(name, JailEvent.jail_provisioning_failed)
 
 
 async def dns_provisioning(
@@ -106,20 +105,15 @@ async def dns_provisioning(
     )
 
 
-async def start_dns_provisioning(
-    fsm: JailStateMachine,
-    database: db.DB,
-    dns_client: hcloud_dns.HCloudDNS,
-    name: str,
-):
+async def start_dns_provisioning(database: db.DB, name: str) -> None:
     logger.info("Starting DNS provisioning for jail %s", name)
     try:
         jail_info = await database.get_jail_or_raise(name)
         await dns_provisioning(hcloud_dns.HCloudDNS(), jail_info)
-        fsm.dns_provisioned()
+        await database.queue_jail_event(name, JailEvent.dns_provisioned)
     except Exception as e:
         logger.error("DNS provisioning failed for server %s", name, exc_info=e)
-        fsm.dns_provisioning_failed()
+        await database.queue_jail_event(name, JailEvent.dns_provisioning_failed)
 
 
 async def jail_setup(
@@ -139,20 +133,20 @@ async def jail_setup(
         raise Exception(f"Ansible failed with {runner.rc}")
 
 
-async def start_jail_setup(fsm: JailStateMachine, database: db.DB, name: str):
+async def start_jail_setup(database: db.DB, name: str) -> None:
     logger.info("Starting jail setup for jail %s", name)
     try:
         jail_info = await database.get_jail_or_raise(name)
         packages = await database.get_jail_packages(name)
         commands = await database.get_jail_commands(name)
         await jail_setup(jail_info=jail_info, packages=packages, commands=commands)
-        fsm.jail_setup_done()
+        await database.queue_jail_event(name, JailEvent.jail_setup_done)
     except Exception as e:
         logger.error("Jail setup failed for jail %s", name, exc_info=e)
-        fsm.jail_setup_failed()
+        await database.queue_jail_event(name, JailEvent.jail_setup_failed)
 
 
-async def start_jail_watch(fsm: JailStateMachine, database: db.DB, name: str):
+async def start_jail_watch(database: db.DB, name: str) -> None:
     logger.info("Starting healtcheck for jail %s", name)
     try:
         logger.info("not implemented lol")
@@ -175,15 +169,15 @@ async def jail_removal(jail_info: models.JailInfo):
         raise Exception(f"Ansible failed with {runner.rc}")
 
 
-async def start_jail_removal(fsm: JailStateMachine, database: db.DB, name: str):
+async def start_jail_removal(database: db.DB, name: str) -> None:
     logger.info("Starting removal of jail %s", name)
     try:
         jail_info = await database.get_jail_or_raise(name)
         await jail_removal(jail_info)
-        fsm.jail_removed()
+        await database.queue_jail_event(name, JailEvent.jail_removed)
     except Exception as e:
         logger.error("Stop server failed for server %s, ignoring", name, exc_info=e)
-        fsm.jail_removal_failed()
+        await database.queue_jail_event(name, JailEvent.jail_removal_failed)
 
 
 async def dns_deprovisioning(dns_client: hcloud_dns.HCloudDNS, name: str):
@@ -195,16 +189,14 @@ async def dns_deprovisioning(dns_client: hcloud_dns.HCloudDNS, name: str):
         await dns_client.delete_record(record.id)
 
 
-async def start_dns_deprovisioning(
-    fsm: JailStateMachine, dns_client: hcloud_dns.HCloudDNS, database: db.DB, name: str
-):
+async def start_dns_deprovisioning(database: db.DB, name: str) -> None:
     logger.info("Starting DNS deprovisioning for jail %s", name)
     try:
         await dns_deprovisioning(hcloud_dns.HCloudDNS(), name)
         await database.set_jail_state(
             name, "terminated"
         )  # Have to do this here because the tasks will be cancelled
-        fsm.dns_deprovisioned()
+        await database.queue_jail_event(name, JailEvent.dns_deprovisioned)
     except Exception as e:
         logger.error("DNS deprovisioning failed for jail %s", name, exc_info=e)
-        fsm.dns_deprovisioning_failed()
+        await database.queue_jail_event(name, JailEvent.dns_deprovisioning_failed)

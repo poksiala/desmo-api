@@ -1,9 +1,10 @@
 from typing import List, Optional
-
+import asyncio
 import logging
 import asyncpg
 
 from . import models
+from . import enums
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,9 @@ class DB:
     def __init__(self, dsn: str):
         self.dsn = dsn
         self._conn: Optional[asyncpg.Connection] = None
+        self._fake_queue = asyncio.Queue[
+            models.JailEventQueueObject
+        ]()  # Temporary until persisted queue exists
 
     async def close(self) -> None:
         if self._conn is not None:
@@ -90,7 +94,7 @@ class DB:
             conn = await asyncpg.connect(self.dsn)
             self._conn = conn
             return conn
-        else: 
+        else:
             return self._conn
 
     async def migrate(self):
@@ -261,3 +265,17 @@ class DB:
         await conn.execute(
             "UPDATE prison SET replicas = $1 WHERE name = $2;", replicas, name
         )
+
+    async def queue_jail_event(self, jail_name: str, event: enums.JailEvent):
+        await self._fake_queue.put(
+            models.JailEventQueueObject(name=jail_name, event=event)
+        )
+
+    async def get_jail_event(self) -> models.JailEventQueueObject:
+        return await self._fake_queue.get()
+
+    def get_jail_event_no_wait(self) -> models.JailEventQueueObject | None:
+        try:
+            return self._fake_queue.get_nowait()
+        except asyncio.QueueEmpty:
+            return None

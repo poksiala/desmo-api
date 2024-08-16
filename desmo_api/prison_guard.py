@@ -1,10 +1,12 @@
 import logging
-from . import db, fsm, hcloud_dns
+from . import db, hcloud_dns
 from typing import Dict, List, Optional, Set
 import secrets
 import os
 import random
 import asyncio
+
+from .enums import JailEvent
 
 logger = logging.getLogger(__name__)
 
@@ -13,22 +15,9 @@ class PrisonGuard:
     def __init__(self, database: db.DB, dns_client: hcloud_dns.HCloudDNS):
         self._db = database
         self._dns_client = dns_client
-        self.state_machines: Dict[str, fsm.JailStateMachine] = {}
         self._tasks: Set[asyncio.Task] = set()
 
     async def initialize(self):
-        logger.info("Loading servers from database")
-        jails = await self._db.get_jails()
-        logger.info("Loaded %s jails from database", len(jails))
-        logger.info(jails)
-        for jail in jails:
-            logger.info("Loading server %s with state %s", jail.name, jail.state)
-            _fsm = fsm.JailStateMachine(self._dns_client, self._db, jail.name)
-            _fsm.current_state_value = jail.state
-            _fsm.start_on_enter_task()
-            self.state_machines[jail.name] = _fsm
-        logger.info("Loaded %s jails from database", len(jails))
-        logger.info(jails)
         task = asyncio.create_task(self.reconcile_prisons())
         self._tasks.add(task)
 
@@ -64,11 +53,7 @@ class PrisonGuard:
         for i, command in enumerate(commands):
             await self._db.insert_jail_command(name, command, i)
 
-        self.state_machines[name] = fsm.JailStateMachine(
-            self._dns_client, self._db, name
-        )
-        self.state_machines[name].initialize()
-        await asyncio.sleep(1)  # TODO: get rid of these hacks
+        await self._db.queue_jail_event(name, JailEvent.initialize)
         return name
 
     async def create_prison(
@@ -86,11 +71,11 @@ class PrisonGuard:
             await self._db.insert_prison_command(name, command, i)
 
     async def remove_jail(self, name: str) -> None:
-        self.state_machines[name].remove_jail()
+        await self._db.queue_jail_event(name, JailEvent.remove_jail)
 
     async def reconcile_prison(self, name: str):
         logger.info("Reconciling prison %s", name)
-        prison = await self._db.get_prison(name)
+        prison = await self._db.get_prison_or_raise(name)
         jails = await self._db.get_prison_jails(name)
         live_jails = [j for j in jails if j.state != "terminated"]
         if len(live_jails) < prison.replicas:
@@ -136,7 +121,7 @@ class PrisonGuard:
             self._tasks.add(task)
 
     async def update_prison_replicas(self, name: str, replicas: int):
-        prison = await self._db.get_prison(name)
+        prison = await self._db.get_prison_or_raise(name)
         if prison.replicas == replicas:
             return
         await self._db.update_prison_replicas(name, replicas)
@@ -144,5 +129,3 @@ class PrisonGuard:
     def stop(self):
         for task in self._tasks:
             task.cancel()
-        for fsm in self.state_machines.values():
-            fsm.stop()

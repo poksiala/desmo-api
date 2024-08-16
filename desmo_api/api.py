@@ -1,12 +1,12 @@
 from fastapi import FastAPI, Header, HTTPException, UploadFile, File
 from fastapi.responses import RedirectResponse
 from typing import Dict, Annotated, Union, List
-from .fsm import JailStateMachine
 import logging
 import sys
 import asyncio
-import statemachine.exceptions
 from contextlib import asynccontextmanager
+
+from desmo_api.enums import JailEvent
 from .hcloud_dns import HCloudDNS
 import os
 from . import db, models
@@ -14,6 +14,7 @@ from .actions import prepare_runners
 from .prison_guard import PrisonGuard
 from tarfile import TarFile
 import json
+from .jail_fsm import JailEventWorker
 
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
@@ -24,17 +25,23 @@ database = db.DB(os.environ["DATABASE_DSN"])
 
 GUARD = PrisonGuard(database, DNS_CLIENT)
 
+JAIL_EVENT_WORKER = JailEventWorker(database=database)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Running migrations")
     await database.migrate()
     logger.info("Preparing runners")
-    # await prepare_runners()
+    await prepare_runners()
+    logger.info("Start Jail event watcher")
+    JAIL_EVENT_WORKER.start()
     logger.info("Loading jails from database")
     await GUARD.initialize()
     yield
     GUARD.stop()
+    logger.info("Waiting for jail tasks to complete")
+    await JAIL_EVENT_WORKER.stop()
     logger.info("Closing asyncio clients")
     await DNS_CLIENT.close()
     await database.close()
@@ -105,13 +112,11 @@ async def delete_jail(
 ) -> Dict[str, str]:
     if not x_api_key or x_api_key != os.environ["API_KEY"]:
         raise HTTPException(status_code=401, detail="Unauthorized")
-    if name not in GUARD.state_machines:
-        return {"error": "jail does not exist"}
     try:
-        GUARD.state_machines[name].remove_jail()
-    except statemachine.exceptions.TransitionNotAllowed:
-        return {"error": "jail is not ready"}
-    await asyncio.sleep(1)
+        jail = await database.get_jail_or_raise(name)
+        await database.queue_jail_event(name, JailEvent.remove_jail)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Jail not found")
     return {"status": "ok"}
 
 
