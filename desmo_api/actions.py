@@ -22,7 +22,7 @@ def get_inventory(vars: Optional[dict] = None) -> dict:
         "all": {
             "vars": {
                 "ansible_user": "automation",
-                "ansible_python_interpreter": "/usr/local/bin/python",
+                "ansible_python_interpreter": "/usr/local/bin/python3",
                 "jails_path": "/usr/local/jails",
                 "media_path": "/usr/local/jails/media",
                 "containers_path": "/usr/local/jails/containers",
@@ -63,6 +63,7 @@ async def jail_provisioning(jail_info: models.JailInfo):
         "jail_host": jail_info.host,
         "jail_name": jail_info.name,
         "jail_ipv6": jail_info.ip,
+        "jail_base": jail_info.base,
     }
     inventory = get_inventory(vars)
     _thread, runner = run_ansible_playbook(

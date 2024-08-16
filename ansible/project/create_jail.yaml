@@ -19,7 +19,7 @@
 
         - name: extract base files to jail
           ansible.builtin.unarchive:
-            src: "{{ media_path }}/14.0-RELEASE-base.txz"
+            src: "{{ media_path }}/{{ jail_base }}.txz"
             dest: "{{ containers_path }}/{{ jail_name }}/"
             remote_src: yes
             extra_opts:

@@ -20,7 +20,7 @@ class FullJailInfoResponse(JailInfo):
 
 class CreateJailRequest(BaseModel):
     name: str
-    base: str = "14.0-RELEASE-base"
+    base: str = "14.1-RELEASE-base"
     packages: List[str] = []
     commands: List[str] = []
 

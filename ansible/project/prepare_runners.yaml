@@ -47,12 +47,8 @@
         url: "{{ item.url }}"
         dest: "{{ media_path }}/{{ item.name }}"
       with_items:
-        - name: 12.4-RELEASE-base.txz
-          url: https://download.freebsd.org/ftp/releases/amd64/amd64/12.4-RELEASE/base.txz
-        - name: 13.2-RELEASE-base.txz
-          url: https://download.freebsd.org/ftp/releases/amd64/amd64/13.2-RELEASE/base.txz
-        - name: 14.0-RELEASE-base.txz
-          url: https://download.freebsd.org/ftp/releases/amd64/amd64/14.0-RELEASE/base.txz
+        - name: 14.1-RELEASE-base.txz
+          url: https://download.freebsd.org/ftp/releases/amd64/amd64/14.1-RELEASE/base.txz
 
     - name: Touch jail.conf
       become: true
