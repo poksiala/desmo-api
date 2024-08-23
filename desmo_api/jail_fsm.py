@@ -77,7 +77,7 @@ async def process_jail_event(
     clients: actions.Clients, jail_name: str, event: JailEvent
 ) -> None:
     jail = await clients.api.get_jail_info(jail_name)
-    log.info("Processing event %s for jail %s.", event, jail_name)
+    logger.info("Processing event %s for jail %s.", event, jail_name)
     if jail is None:
         logger.warning("Event %s received for non existing jail %s", event, jail_name)
         return
