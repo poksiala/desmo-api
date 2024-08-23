@@ -1,14 +1,14 @@
-import logging
 from . import db, hcloud_dns
-from typing import Dict, List, Optional, Set
+from typing import List, Optional, Set
 import secrets
 import os
 import random
 import asyncio
 
 from .enums import JailEvent
+from . import log
 
-logger = logging.getLogger(__name__)
+logger = log.get_logger(__name__)
 
 
 class PrisonGuard:

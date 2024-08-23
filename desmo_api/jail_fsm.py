@@ -2,14 +2,21 @@ import asyncio
 import logging
 from tilakone import StateMachine, StateChart
 from typing import Awaitable, Callable, Dict
-
+import os
 
 from . import actions
 from . import db
+from . import models
 from .enums import JailState, JailEvent
+import asyncpg
+from PgQueuer.db import AsyncpgDriver
+from PgQueuer.qm import QueueManager
+from PgQueuer.models import Job as PgQueuerJob
+from . import log
+from .hcloud_dns import HCloudDNS
+from .desmo_api_client import DesmoApiClient
 
-
-logger = logging.getLogger(__name__)
+logger = log.get_logger(__name__)
 
 
 state_chart = StateChart[JailState, JailEvent](
@@ -56,7 +63,7 @@ state_chart = StateChart[JailState, JailEvent](
     }
 )
 
-action_mapping: Dict[JailState, Callable[[db.DB, str], Awaitable[None]]] = {
+action_mapping: Dict[JailState, Callable[[actions.Clients, str], Awaitable[None]]] = {
     JailState.jail_provisioning: actions.start_jail_provisioning,
     JailState.dns_provisioning: actions.start_dns_provisioning,
     JailState.jail_setup: actions.start_jail_setup,
@@ -66,10 +73,15 @@ action_mapping: Dict[JailState, Callable[[db.DB, str], Awaitable[None]]] = {
 }
 
 
-async def process_jail_event(database: db.DB, jail_name: str, event: JailEvent) -> None:
-    jail = await database.get_jail(jail_name)
-    initial_state = None if jail is None else JailState(jail.state)
-    fsm = StateMachine(state_chart, initial_state=initial_state)
+async def process_jail_event(
+    clients: actions.Clients, jail_name: str, event: JailEvent
+) -> None:
+    jail = await clients.api.get_jail_info(jail_name)
+    log.info("Processing event %s for jail %s.", event, jail_name)
+    if jail is None:
+        logger.warning("Event %s received for non existing jail %s", event, jail_name)
+        return
+    fsm = StateMachine(state_chart, initial_state=jail.state)
     transitioned = fsm.send(event)
     if not transitioned:
         logging.warning(
@@ -80,33 +92,63 @@ async def process_jail_event(database: db.DB, jail_name: str, event: JailEvent) 
         )
     else:
         new_state = fsm.current_state
-        await database.set_jail_state(jail_name, new_state)
+        await clients.api.set_jail_state(jail_name, new_state)
         action = action_mapping.get(new_state)
         if action is not None:
-            logging.info(
+            logger.info(
                 "Starting action for jail `%s` in state `%s`.", jail_name, new_state
             )
-            await action(database, jail_name)
+            await action(clients, jail_name)
 
 
 class JailEventWorker:
-    def __init__(self, database: db.DB):
-        self._db = database
-        self._shutting_down = False
+    def __init__(self):
         self._task: asyncio.Task | None = None
+        self._qm: QueueManager | None = None
 
     async def _process(self):
-        while not self._shutting_down:
-            job = self._db.get_jail_event_no_wait()
-            if job is None:
-                await asyncio.sleep(1)
+        logger.info("JailEventWorkerStarted")
+        conn = await asyncpg.connect(os.environ["DATABASE_DSN"])
+        driver = AsyncpgDriver(conn)
+        qm = QueueManager(driver)
+        self._qm = qm
+        lock = asyncio.Lock()
+        clients = actions.Clients(dns=HCloudDNS(), api=DesmoApiClient())
+
+        @qm.entrypoint(db.JAIL_EVENT_QUEUE)
+        async def process_message(job: PgQueuerJob) -> None:
+            logger.info("Processing job %s", job.model_dump_json())
+            payload = job.payload
+            if payload is None:
+                logger.warning("Job %s payload was none", job.id)
             else:
-                await process_jail_event(self._db, job.name, job.event)
+                job_payload = models.JailEventQueueObject.model_validate_json(
+                    payload.decode()
+                )
+                async with lock:  # Only process one task at a time at this point
+                    await process_jail_event(
+                        clients, job_payload.name, job_payload.event
+                    )
+
+        await qm.run()
+        await clients.stop()
+
+    async def run(self):
+        await self._process()
 
     def start(self):
+        logger.info("Starting JailEventWorker")
         self._task = asyncio.create_task(self._process())
 
     async def stop(self):
-        self._shutting_down = True
-        if self._task:
+        logger.info("Shutting down JailEventWorker")
+        if self._qm is not None:
+            logger.info("Setting alive to false")
+            self._qm.alive = False
+        if self._task is not None:
+            logger.info("awaiting task")
             await self._task
+
+    def start_shutdown(self):
+        if self._qm is not None:
+            self._qm.alive = False

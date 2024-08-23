@@ -8,21 +8,30 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = ">=3.11.9,<3.13"
 ansible-runner = "^2.3.4"
-fastapi = "^0.104.1"
+fastapi = "^0.112.1"
 aiohttp = {extras = ["speedups"], version = "^3.9.0"}
 aiodns = "^3.1.1"
-ansible = "^8.0.0"
+ansible = "^10.0.0"
 asyncpg = "^0.29.0"
 python-multipart = "^0.0.6"
 tilakone = "^0.1.0"
+pgqueuer = "~0.6.0"
+uvicorn = "^0.30.6"
 
 
 [tool.poetry.group.dev.dependencies]
-pydot = "^1.4.2"
-mypy = "^1.7.0"
-uvicorn = {extras = ["standard"], version = "^0.24.0.post1"}
-flake8 = "^6.1.0"
-black = "^24.8.0"
+pydot = "*"
+mypy = "*"
+uvicorn = {extras = ["standard"], version = "*"}
+flake8 = "*"
+black = "*"
+
+[tool.poe.tasks]
+jailer  = "python -m desmo_api jailer"
+api     = "python -m desmo_api api"
+caddy   = "caddy run --config Caddyfile --watch"
+format  = "black desmo_api"
+flake   = "flake8 --max-line-length 88"
 
 [build-system]
 requires = ["poetry-core"]

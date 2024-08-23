@@ -1,12 +1,16 @@
 from typing import List, Optional
 import asyncio
-import logging
 import asyncpg
+from PgQueuer.db import AsyncpgDriver
+from PgQueuer.queries import Queries
 
 from . import models
 from . import enums
+from . import log
 
-logger = logging.getLogger(__name__)
+logger = log.get_logger(__name__)
+
+JAIL_EVENT_QUEUE = "JAIL_EVENT"
 
 MIGRATIONS = [
     [
@@ -74,59 +78,153 @@ MIGRATIONS = [
         """ALTER TABLE jail ADD COLUMN namespace text REFERENCES namespace(name) ON DELETE RESTRICT DEFAULT 'default';""",
         """ALTER TABLE prison ADD COLUMN namespace text REFERENCES namespace(name) ON DELETE RESTRICT DEFAULT 'default';""",
     ],
+    [
+        """
+        CREATE TYPE pgqueuer_status AS ENUM ('queued', 'picked');
+        """,
+        """
+        CREATE TABLE pgqueuer (
+            id SERIAL PRIMARY KEY,
+            priority INT NOT NULL,
+            created TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
+            updated TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
+            status pgqueuer_status NOT NULL,
+            entrypoint TEXT NOT NULL,
+            payload BYTEA
+        );
+        """,
+        """
+        CREATE INDEX pgqueuer_priority_id_id1_idx ON pgqueuer (priority ASC, id DESC)
+            INCLUDE (id) WHERE status = 'queued';
+        """,
+        """
+        CREATE INDEX pgqueuer_updated_id_id1_idx ON pgqueuer (updated ASC, id DESC)
+            INCLUDE (id) WHERE status = 'picked';
+        """,
+        """
+        CREATE TYPE pgqueuer_statistics_status AS ENUM ('exception', 'successful');
+        """,
+        """
+        CREATE TABLE pgqueuer_statistics (
+            id SERIAL PRIMARY KEY,
+            created TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT DATE_TRUNC('sec', NOW() at time zone 'UTC'),
+            count BIGINT NOT NULL,
+            priority INT NOT NULL,
+            time_in_queue INTERVAL NOT NULL,
+            status pgqueuer_statistics_status NOT NULL,
+            entrypoint TEXT NOT NULL
+        );
+        """,
+        """
+        CREATE UNIQUE INDEX pgqueuer_statistics_unique_count ON pgqueuer_statistics (
+            priority,
+            DATE_TRUNC('sec', created at time zone 'UTC'),
+            DATE_TRUNC('sec', time_in_queue),
+            status,
+            entrypoint
+        );
+        """,
+        """
+        CREATE FUNCTION fn_pgqueuer_changed() RETURNS TRIGGER AS $$
+        DECLARE
+            to_emit BOOLEAN := false;  -- Flag to decide whether to emit a notification
+        BEGIN
+            -- Check operation type and set the emit flag accordingly
+            IF TG_OP = 'UPDATE' AND OLD IS DISTINCT FROM NEW THEN
+                to_emit := true;
+            ELSIF TG_OP = 'DELETE' THEN
+                to_emit := true;
+            ELSIF TG_OP = 'INSERT' THEN
+                to_emit := true;
+            ELSIF TG_OP = 'TRUNCATE' THEN
+                to_emit := true;
+            END IF;
+
+            -- Perform notification if the emit flag is set
+            IF to_emit THEN
+                PERFORM pg_notify(
+                    'ch_pgqueuer',
+                    json_build_object(
+                        'channel', 'ch_pgqueuer',
+                        'operation', lower(TG_OP),
+                        'sent_at', NOW(),
+                        'table', TG_TABLE_NAME,
+                        'type', 'table_changed_event'
+                    )::text
+                );
+            END IF;
+
+            -- Return appropriate value based on the operation
+            IF TG_OP IN ('INSERT', 'UPDATE') THEN
+                RETURN NEW;
+            ELSIF TG_OP = 'DELETE' THEN
+                RETURN OLD;
+            ELSE
+                RETURN NULL; -- For TRUNCATE and other non-row-specific contexts
+            END IF;
+
+        END;
+        $$ LANGUAGE plpgsql;
+        """,
+        """
+        CREATE TRIGGER tg_pgqueuer_changed
+        AFTER INSERT OR UPDATE OR DELETE OR TRUNCATE ON pgqueuer
+        EXECUTE FUNCTION fn_pgqueuer_changed();
+        """,
+    ],
 ]
 
 
 class DB:
     def __init__(self, dsn: str):
         self.dsn = dsn
-        self._conn: Optional[asyncpg.Connection] = None
-        self._fake_queue = asyncio.Queue[
-            models.JailEventQueueObject
-        ]()  # Temporary until persisted queue exists
+        self._pool: Optional[asyncpg.Pool] = None
 
     async def close(self) -> None:
-        if self._conn is not None:
-            await self._conn.close()
+        if self._pool is not None:
+            await self._pool.close()
 
-    async def _get_conn(self) -> asyncpg.Connection:
-        if self._conn is None:
-            conn = await asyncpg.connect(self.dsn)
-            self._conn = conn
-            return conn
-        else:
-            return self._conn
+    async def _get_pool(self) -> asyncpg.Pool:
+        if self._pool is not None:
+            return self._pool
+        pool = await asyncpg.create_pool(self.dsn)
+        if pool is not None:
+            self._pool = pool
+            return pool
+        logger.warning("Failed to aquire pool. Trying again after 1 second")
+        await asyncio.sleep(1)
+        return await self._get_pool()
 
     async def migrate(self):
-        conn = await self._get_conn()
+        pool = await self._get_pool()
         # get version from meta table
         try:
-            version = await conn.fetchval("SELECT MAX(version) FROM meta")
+            version = await pool.fetchval("SELECT MAX(version) FROM meta")
         except asyncpg.UndefinedTableError:
             version = -1
 
         assert type(version) is int, "version must be an integer"
 
         logger.info("Current database version: %s", version)
-
-        for i, migration in enumerate(MIGRATIONS[version + 1 :]):
-            async with conn.transaction():
-                for query in migration:
-                    logger.info("Running migration: %s", query)
-                    await conn.execute(query)
-                await conn.execute(
-                    "INSERT INTO meta (version) VALUES ($1) ON CONFLICT DO NOTHING",
-                    version + i + 1,
-                )
+        async with pool.acquire() as conn:
+            for i, migration in enumerate(MIGRATIONS[version + 1 :]):  # noqa: E203
+                async with conn.transaction():
+                    for query in migration:
+                        logger.info("Running migration: %s", query)
+                        await conn.execute(query)
+                    await conn.execute(
+                        "INSERT INTO meta (version) VALUES ($1) ON CONFLICT DO NOTHING",
+                        version + i + 1,
+                    )
 
     async def get_jails(self) -> List[models.JailInfo]:
-        conn = await self._get_conn()
-        rows = await conn.fetch("SELECT base, name, state, ip, host FROM jail;")
+        pool = await self._get_pool()
+        rows = await pool.fetch("SELECT base, name, state, ip, host FROM jail;")
         return [models.JailInfo(**row) for row in rows]
 
     async def get_jail(self, name: str) -> models.JailInfo | None:
-        conn = await self._get_conn()
-        row = await conn.fetchrow(
+        pool = await self._get_pool()
+        row = await pool.fetchrow(
             "SELECT base, name, state, ip, host FROM jail WHERE name = $1;", name
         )
         return None if row is None else models.JailInfo(**row)
@@ -138,33 +236,33 @@ class DB:
         return res
 
     async def get_jail_packages(self, name: str) -> List[str]:
-        conn = await self._get_conn()
-        rows = await conn.fetch(
+        pool = await self._get_pool()
+        rows = await pool.fetch(
             "SELECT name FROM jail_package WHERE jail_name = $1;", name
         )
         return [row["name"] for row in rows]
 
     async def get_jail_commands(self, name: str) -> List[str]:
-        conn = await self._get_conn()
-        rows = await conn.fetch(
+        pool = await self._get_pool()
+        rows = await pool.fetch(
             "SELECT command FROM jail_command WHERE jail_name = $1 ORDER BY order_no;",
             name,
         )
         return [row["command"] for row in rows]
 
     async def delete_jail(self, name: str) -> None:
-        conn = await self._get_conn()
-        await conn.execute("DELETE FROM jail WHERE name = $1;", name)
+        pool = await self._get_pool()
+        await pool.execute("DELETE FROM jail WHERE name = $1;", name)
 
     async def set_jail_state(self, name: str, state: str) -> None:
-        conn = await self._get_conn()
-        await conn.execute("UPDATE jail SET state = $1 WHERE name = $2;", state, name)
+        pool = await self._get_pool()
+        await pool.execute("UPDATE jail SET state = $1 WHERE name = $2;", state, name)
 
     async def insert_jail(
         self, name, host, ip, state, base, prison: Optional[str] = None
     ) -> None:
-        conn = await self._get_conn()
-        await conn.execute(
+        pool = await self._get_pool()
+        await pool.execute(
             "INSERT INTO jail (name, host, ip, state, base, prison_name) VALUES ($1, $2, $3, $4, $5, $6);",
             name,
             host,
@@ -175,14 +273,14 @@ class DB:
         )
 
     async def insert_jail_package(self, name: str, package: str) -> None:
-        conn = await self._get_conn()
-        await conn.execute(
+        pool = await self._get_pool()
+        await pool.execute(
             "INSERT INTO jail_package (jail_name, name) VALUES ($1, $2);", name, package
         )
 
     async def insert_jail_command(self, name: str, command: str, order: int) -> None:
-        conn = await self._get_conn()
-        await conn.execute(
+        pool = await self._get_pool()
+        await pool.execute(
             "INSERT INTO jail_command (jail_name, command, order_no) VALUES ($1, $2, $3);",
             name,
             command,
@@ -190,28 +288,28 @@ class DB:
         )
 
     async def get_prisons(self) -> List[models.PrisonInfo]:
-        conn = await self._get_conn()
-        rows = await conn.fetch("SELECT name, base, replicas FROM prison;")
+        pool = await self._get_pool()
+        rows = await pool.fetch("SELECT name, base, replicas FROM prison;")
         return [models.PrisonInfo(**row) for row in rows]
 
     async def get_prison_packages(self, name: str) -> List[str]:
-        conn = await self._get_conn()
-        rows = await conn.fetch(
+        pool = await self._get_pool()
+        rows = await pool.fetch(
             "SELECT name FROM prison_package WHERE prison_name = $1;", name
         )
         return [row["name"] for row in rows]
 
     async def get_prison_commands(self, name: str) -> List[str]:
-        conn = await self._get_conn()
-        rows = await conn.fetch(
+        pool = await self._get_pool()
+        rows = await pool.fetch(
             "SELECT command FROM prison_command WHERE prison_name = $1 ORDER BY order_no;",
             name,
         )
         return [row["command"] for row in rows]
 
     async def insert_prison(self, name: str, base: str, replicas: int) -> None:
-        conn = await self._get_conn()
-        await conn.execute(
+        pool = await self._get_pool()
+        await pool.execute(
             "INSERT INTO prison (name, base, replicas) VALUES ($1, $2, $3);",
             name,
             base,
@@ -219,16 +317,16 @@ class DB:
         )
 
     async def insert_prison_package(self, name: str, package: str) -> None:
-        conn = await self._get_conn()
-        await conn.execute(
+        pool = await self._get_pool()
+        await pool.execute(
             "INSERT INTO prison_package (prison_name, name) VALUES ($1, $2);",
             name,
             package,
         )
 
     async def insert_prison_command(self, name: str, command: str, order: int) -> None:
-        conn = await self._get_conn()
-        await conn.execute(
+        pool = await self._get_pool()
+        await pool.execute(
             "INSERT INTO prison_command (prison_name, command, order_no) VALUES ($1, $2, $3);",
             name,
             command,
@@ -236,8 +334,8 @@ class DB:
         )
 
     async def get_prison(self, name: str) -> models.PrisonInfo | None:
-        conn = await self._get_conn()
-        row = await conn.fetchrow(
+        pool = await self._get_pool()
+        row = await pool.fetchrow(
             "SELECT name, base, replicas FROM prison WHERE name = $1;", name
         )
         return None if row is None else models.PrisonInfo(**row)
@@ -249,33 +347,37 @@ class DB:
         return res
 
     async def delete_prison(self, name: str) -> None:
-        conn = await self._get_conn()
-        await conn.execute("DELETE FROM prison WHERE name = $1;", name)
+        pool = await self._get_pool()
+        await pool.execute("DELETE FROM prison WHERE name = $1;", name)
 
     async def get_prison_jails(self, name: str) -> List[models.JailInfo]:
-        conn = await self._get_conn()
-        rows = await conn.fetch(
+        pool = await self._get_pool()
+        rows = await pool.fetch(
             "SELECT base, name, state, ip, host FROM jail WHERE prison_name = $1;",
             name,
         )
         return [models.JailInfo(**row) for row in rows]
 
     async def update_prison_replicas(self, name: str, replicas: int) -> None:
-        conn = await self._get_conn()
-        await conn.execute(
+        pool = await self._get_pool()
+        await pool.execute(
             "UPDATE prison SET replicas = $1 WHERE name = $2;", replicas, name
         )
 
+    async def clean_jails(self):
+        pool = await self._get_pool()
+        await pool.execute("DELETE FROM jail WHERE state = $1;", "terminated")
+
     async def queue_jail_event(self, jail_name: str, event: enums.JailEvent):
-        await self._fake_queue.put(
+        logger.info("Queueing jail event")
+        event_data = (
             models.JailEventQueueObject(name=jail_name, event=event)
+            .model_dump_json()
+            .encode()
         )
-
-    async def get_jail_event(self) -> models.JailEventQueueObject:
-        return await self._fake_queue.get()
-
-    def get_jail_event_no_wait(self) -> models.JailEventQueueObject | None:
-        try:
-            return self._fake_queue.get_nowait()
-        except asyncio.QueueEmpty:
-            return None
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            driver = AsyncpgDriver(conn)
+            queries = Queries(driver)
+            await queries.enqueue(JAIL_EVENT_QUEUE, event_data)
+        logger.info("JailEvent Queued")

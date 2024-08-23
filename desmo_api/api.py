@@ -1,47 +1,44 @@
 from fastapi import FastAPI, Header, HTTPException, UploadFile, File
 from fastapi.responses import RedirectResponse
 from typing import Dict, Annotated, Union, List
-import logging
-import sys
-import asyncio
 from contextlib import asynccontextmanager
 
 from desmo_api.enums import JailEvent
 from .hcloud_dns import HCloudDNS
 import os
 from . import db, models
-from .actions import prepare_runners
 from .prison_guard import PrisonGuard
 from tarfile import TarFile
 import json
 from .jail_fsm import JailEventWorker
+from . import log
+import signal
+import uvicorn
 
 
-logging.basicConfig(stream=sys.stderr, level=logging.INFO)
-logger = logging.getLogger("api")
+logger = log.get_logger(__name__)
 
 DNS_CLIENT = HCloudDNS()
 database = db.DB(os.environ["DATABASE_DSN"])
 
 GUARD = PrisonGuard(database, DNS_CLIENT)
 
-JAIL_EVENT_WORKER = JailEventWorker(database=database)
+JAIL_EVENT_WORKER = JailEventWorker()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Running migrations")
     await database.migrate()
+    logger.info("Cleaning terminated jails from database")
+    await database.clean_jails()
     logger.info("Preparing runners")
-    await prepare_runners()
-    logger.info("Start Jail event watcher")
-    JAIL_EVENT_WORKER.start()
-    logger.info("Loading jails from database")
+    # await prepare_runners()
+    logger.info("Loading prisons from database")
     await GUARD.initialize()
     yield
+    logger.info("Stopping Guard")
     GUARD.stop()
-    logger.info("Waiting for jail tasks to complete")
-    await JAIL_EVENT_WORKER.stop()
     logger.info("Closing asyncio clients")
     await DNS_CLIENT.close()
     await database.close()
@@ -49,6 +46,12 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+
+@app.get("/stop")
+def stop():
+    os.kill(os.getpid(), signal.SIGKILL)
+    return "ok"
 
 
 @app.get("/")
@@ -81,6 +84,39 @@ async def create_jail(
     )
 
 
+@app.post("/jails/{name}/events", status_code=201)
+async def create_jail_event(
+    name: str,
+    req: models.CreateJailEventRequest,
+    x_api_key: Annotated[Union[str, None], Header()] = None,
+):
+    if not x_api_key or x_api_key != os.environ["API_KEY"]:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    try:
+        _ = await database.get_jail_or_raise(name)
+        await database.queue_jail_event(name, req.event)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Jail not found")
+    return {"status": "ok"}
+
+
+@app.patch("/jails/{name}")
+async def update_jail(
+    name: str,
+    req: models.UpdateJailRequest,
+    x_api_key: Annotated[Union[str, None], Header()] = None,
+):
+
+    if not x_api_key or x_api_key != os.environ["API_KEY"]:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    try:
+        _ = await database.get_jail_or_raise(name)
+        await database.set_jail_state(name, req.state)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Jail not found")
+    return {"status": "ok"}
+
+
 @app.get("/jails")
 async def get_jails() -> List[models.JailInfo]:
     jails = await database.get_jails()
@@ -88,10 +124,10 @@ async def get_jails() -> List[models.JailInfo]:
 
 
 @app.get("/jails/{name}")
-async def get_jail(name: str) -> models.FullJailInfoResponse | Dict[str, str]:
+async def get_jail(name: str) -> models.FullJailInfoResponse:
     jail = await database.get_jail(name)
     if jail is None:
-        return {"error": "Jail does not exist"}
+        raise HTTPException(status_code=404, detail="Jail does not exist")
     packages = await database.get_jail_packages(name)
     commands = await database.get_jail_commands(name)
     return models.FullJailInfoResponse(
@@ -113,7 +149,7 @@ async def delete_jail(
     if not x_api_key or x_api_key != os.environ["API_KEY"]:
         raise HTTPException(status_code=401, detail="Unauthorized")
     try:
-        jail = await database.get_jail_or_raise(name)
+        _ = await database.get_jail_or_raise(name)
         await database.queue_jail_event(name, JailEvent.remove_jail)
     except KeyError:
         raise HTTPException(status_code=404, detail="Jail not found")
@@ -208,3 +244,16 @@ async def create_prisonf_from_file(
 
     names = [member.name for member in members]
     return {"filename": image.filename, "members": names, "manifest": manifest}
+
+
+async def main():
+
+    config = uvicorn.Config("desmo_api.api:app", port=8080, log_level="info")
+    server = uvicorn.Server(config)
+
+    def handle_signal(sig, frame) -> None:
+        print("handling signal")
+        server.handle_exit(sig, frame)
+
+    signal.signal(signal.SIGINT, handle_signal)
+    await server.serve()

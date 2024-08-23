@@ -1,6 +1,7 @@
 from pydantic import BaseModel, validator, Field
 from typing import Optional, List
-from .enums import JailEvent
+
+from .enums import JailEvent, JailState
 
 MAX_REPLICAS = 3
 
@@ -13,7 +14,7 @@ class JailEventQueueObject(BaseModel):
 class JailInfo(BaseModel):
     base: str
     name: str
-    state: str
+    state: JailState
     ip: str
     host: str
 
@@ -74,7 +75,15 @@ class UpdatePrisonRequest(BaseModel):
         return v
 
 
+class UpdateJailRequest(BaseModel):
+    state: JailState
+
+
 class PrisonManifest(BaseModel):
     packages: List[str]
     build_commands: List[str] = Field(alias="build-commands")
     start_command: str = Field(alias="start-command")
+
+
+class CreateJailEventRequest(BaseModel):
+    event: JailEvent

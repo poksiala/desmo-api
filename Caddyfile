@@ -1,0 +1,11 @@
+{
+    # Just bind these to some random ports
+    http_port 8000
+    https_port 4430
+}
+
+https://api.desmo.local:8440 {
+    tls internal
+    reverse_proxy localhost:8080
+    log
+}
