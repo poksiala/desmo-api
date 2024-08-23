@@ -9,13 +9,10 @@
             path: "{{ containers_path }}/{{ jail_name }}"
             state: absent
 
-        - name: Create directory for jail
-          ansible.builtin.file:
-            path: "{{ containers_path }}/{{ jail_name }}"
-            state: directory
-            owner: root
-            group: wheel
-            mode: 0750
+        - name: Create dataset for jail
+          community.general.zfs:
+            name: "zroot/jails/containers/{{ jail_name }}"
+            state: present
 
         - name: extract base files to jail
           ansible.builtin.unarchive:

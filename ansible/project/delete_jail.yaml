@@ -15,7 +15,7 @@
         - name: Remove all chflags from jail files
           shell: chflags -R 0 {{ containers_path }}/{{ jail_name }}
 
-        - name: Remove jail directory
-          ansible.builtin.file:
-            path: "{{ containers_path }}/{{ jail_name }}"
+        - name: Remove jail dataset
+          community.general.zfs:
+            name: "zroot/jails/containers/{{ jail_name }}"
             state: absent
