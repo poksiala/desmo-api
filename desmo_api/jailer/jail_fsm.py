@@ -77,15 +77,15 @@ async def process_jail_event(
     clients: actions.Clients, jail_name: str, event: JailEvent
 ) -> None:
     jail = await clients.api.get_jail_info(jail_name)
-    logger.info("Processing event %s for jail %s.", event, jail_name)
+    logger.info("Processing event {} for jail {}.", event, jail_name)
     if jail is None:
-        logger.warning("Event %s received for non existing jail %s", event, jail_name)
+        logger.warning("Event {} received for non existing jail {}", event, jail_name)
         return
     fsm = StateMachine(state_chart, initial_state=jail.state)
     transitioned = fsm.send(event)
     if not transitioned:
         logging.warning(
-            "Discarding irrelevant event `%s` for jail `%s` in state `%s`.",
+            "Discarding irrelevant event `{}` for jail `{}` in state `{}`.",
             event,
             jail_name,
             fsm.current_state,
@@ -96,7 +96,7 @@ async def process_jail_event(
         action = action_mapping.get(new_state)
         if action is not None:
             logger.info(
-                "Starting action for jail `%s` in state `%s`.", jail_name, new_state
+                "Starting action for jail `{}` in state `{}`.", jail_name, new_state
             )
             await action(clients, jail_name)
 
@@ -117,10 +117,10 @@ class JailEventWorker:
 
         @qm.entrypoint(db.JAIL_EVENT_QUEUE)
         async def process_message(job: PgQueuerJob) -> None:
-            logger.info("Processing job %s", job.model_dump_json())
+            logger.info("Processing job {}", job.model_dump_json())
             payload = job.payload
             if payload is None:
-                logger.warning("Job %s payload was none", job.id)
+                logger.warning("Job {} payload was none", job.id)
             else:
                 job_payload = models.JailEventQueueObject.model_validate_json(
                     payload.decode()

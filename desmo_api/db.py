@@ -205,12 +205,12 @@ class DB:
 
         assert type(version) is int, "version must be an integer"
 
-        logger.info("Current database version: %s", version)
+        logger.info("Current database version: {}", version)
         async with pool.acquire() as conn:
             for i, migration in enumerate(MIGRATIONS[version + 1 :]):  # noqa: E203
                 async with conn.transaction():
                     for query in migration:
-                        logger.info("Running migration: %s", query)
+                        logger.info("Running migration: {}", query)
                         await conn.execute(query)
                     await conn.execute(
                         "INSERT INTO meta (version) VALUES ($1) ON CONFLICT DO NOTHING",

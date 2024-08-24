@@ -85,13 +85,13 @@ async def jail_provisioning(jail_info: models.JailInfo):
 
 
 async def start_jail_provisioning(clients: Clients, name: str) -> None:
-    logger.info("Starting provisioning for jail %s", name)
+    logger.info("Starting provisioning for jail {}", name)
     try:
         jail_info = await clients.api.get_jail_or_raise(name)
         await jail_provisioning(jail_info=jail_info)
         await clients.api.create_jail_event(name, JailEvent.jail_provisioned)
     except Exception as e:
-        logger.error("Jail provisioning failed for %s", name, exc_info=e)
+        logger.error("Jail provisioning failed for {}", name, exc_info=e)
         await clients.api.create_jail_event(name, JailEvent.jail_provisioning_failed)
 
 
@@ -103,10 +103,10 @@ async def dns_provisioning(
     ipv6 = jail_info.ip
     records = await dns_client.get_records_by_name(zone_id, name)
     for record in records:
-        logger.info("Deleting existing record %s for jail %s", record.id, name)
+        logger.info("Deleting existing record {} for jail {}", record.id, name)
         await dns_client.delete_record(record.id)
 
-    logger.info("Creating AAAA record for jail %s", name)
+    logger.info("Creating AAAA record for jail {}", name)
     await dns_client.create_record(
         zone_id=zone_id,
         name=f"{name}.jail",
@@ -116,13 +116,13 @@ async def dns_provisioning(
 
 
 async def start_dns_provisioning(clients: Clients, name: str) -> None:
-    logger.info("Starting DNS provisioning for jail %s", name)
+    logger.info("Starting DNS provisioning for jail {}", name)
     try:
         jail_info = await clients.api.get_jail_or_raise(name)
         await dns_provisioning(clients.dns, jail_info)
         await clients.api.create_jail_event(name, JailEvent.dns_provisioned)
     except Exception as e:
-        logger.error("DNS provisioning failed for server %s", name, exc_info=e)
+        logger.error("DNS provisioning failed for server {}", name, exc_info=e)
         await clients.api.create_jail_event(name, JailEvent.dns_provisioning_failed)
 
 
@@ -144,7 +144,7 @@ async def jail_setup(
 
 
 async def start_jail_setup(clients: Clients, name: str) -> None:
-    logger.info("Starting jail setup for jail %s", name)
+    logger.info("Starting jail setup for jail {}", name)
     try:
         jail_info = await clients.api.get_jail_or_raise(name)
         packages = jail_info.packages
@@ -152,16 +152,16 @@ async def start_jail_setup(clients: Clients, name: str) -> None:
         await jail_setup(jail_info=jail_info, packages=packages, commands=commands)
         await clients.api.create_jail_event(name, JailEvent.jail_setup_done)
     except Exception as e:
-        logger.error("Jail setup failed for jail %s", name, exc_info=e)
+        logger.error("Jail setup failed for jail {}", name, exc_info=e)
         await clients.api.create_jail_event(name, JailEvent.jail_setup_failed)
 
 
 async def start_jail_watch(clients: Clients, name: str) -> None:
-    logger.info("Starting healtcheck for jail %s", name)
+    logger.info("Starting healtcheck for jail {}", name)
     try:
         logger.info("not implemented lol")
     except Exception as e:
-        logger.error("Server healtcheck failed for jail %s", name, exc_info=e)
+        logger.error("Server healtcheck failed for jail {}", name, exc_info=e)
 
 
 async def jail_removal(jail_info: models.JailInfo):
@@ -180,13 +180,13 @@ async def jail_removal(jail_info: models.JailInfo):
 
 
 async def start_jail_removal(clients: Clients, name: str) -> None:
-    logger.info("Starting removal of jail %s", name)
+    logger.info("Starting removal of jail {}", name)
     try:
         jail_info = await clients.api.get_jail_or_raise(name)
         await jail_removal(jail_info)
         await clients.api.create_jail_event(name, JailEvent.jail_removed)
     except Exception as e:
-        logger.error("Stop server failed for server %s, ignoring", name, exc_info=e)
+        logger.error("Stop server failed for server {}, ignoring", name, exc_info=e)
         await clients.api.create_jail_event(name, JailEvent.jail_removal_failed)
 
 
@@ -195,15 +195,15 @@ async def dns_deprovisioning(dns_client: hcloud_dns.HCloudDNS, name: str):
 
     records = await dns_client.get_records_by_name(zone_id, f"{name}.jail")
     for record in records:
-        logger.info("Deleting record %s for jail %s", record.id, name)
+        logger.info("Deleting record {} for jail {}", record.id, name)
         await dns_client.delete_record(record.id)
 
 
 async def start_dns_deprovisioning(clients: Clients, name: str) -> None:
-    logger.info("Starting DNS deprovisioning for jail %s", name)
+    logger.info("Starting DNS deprovisioning for jail {}", name)
     try:
         await dns_deprovisioning(clients.dns, name)
         await clients.api.create_jail_event(name, JailEvent.dns_deprovisioned)
     except Exception as e:
-        logger.error("DNS deprovisioning failed for jail %s", name, exc_info=e)
+        logger.error("DNS deprovisioning failed for jail {}", name, exc_info=e)
         await clients.api.create_jail_event(name, JailEvent.dns_deprovisioning_failed)

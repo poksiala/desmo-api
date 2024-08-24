@@ -13,7 +13,7 @@ async def start_jailer():
     jailer = JailEventWorker()
 
     def handle_signal(signum: object, _frame: object):
-        logger.info("Handling signal %s", signum)
+        logger.info("Handling signal {}", signum)
         jailer.start_shutdown()
 
     signal.signal(signal.SIGINT, handle_signal)

@@ -74,13 +74,13 @@ class PrisonGuard:
         await self._db.queue_jail_event(name, JailEvent.remove_jail)
 
     async def reconcile_prison(self, name: str):
-        logger.info("Reconciling prison %s", name)
+        logger.info("Reconciling prison {}", name)
         prison = await self._db.get_prison_or_raise(name)
         jails = await self._db.get_prison_jails(name)
         live_jails = [j for j in jails if j.state != "terminated"]
         if len(live_jails) < prison.replicas:
             logger.info(
-                "Creating %s jails for prison %s",
+                "Creating {} jails for prison {}",
                 prison.replicas - len(live_jails),
                 name,
             )
@@ -96,10 +96,10 @@ class PrisonGuard:
                 )
         elif len(live_jails) > prison.replicas:
             remove_count = len(live_jails) - prison.replicas
-            logger.info("Trying to remove %s jails for prison %s", remove_count, name)
+            logger.info("Trying to remove {} jails for prison {}", remove_count, name)
             ready_jails = [j for j in live_jails if j.state == "jail_ready"]
             if len(ready_jails) < remove_count:
-                logger.info("Not enough ready jails to remove for prison %s", name)
+                logger.info("Not enough ready jails to remove for prison {}", name)
                 return
 
             random.shuffle(ready_jails)

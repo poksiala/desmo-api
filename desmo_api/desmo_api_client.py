@@ -47,7 +47,7 @@ class DesmoApiClient:
                 return None
             else:
                 logger.error(
-                    "Unknown status code for jail info request %s", resp.status
+                    "Unknown status code for jail info request {}", resp.status
                 )
                 raise ValueError("Unknown status code for jail info request")
 
