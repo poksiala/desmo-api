@@ -1,7 +1,5 @@
-import logging
+import loguru
 
 
-def get_logger(name: str, *, level=logging.INFO):
-    logger = logging.getLogger(name)
-    logger.setLevel(level)
-    return logger
+def get_logger(name: str):
+    return loguru.logger
