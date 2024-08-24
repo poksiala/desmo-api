@@ -10,7 +10,6 @@ from . import db, models
 from .prison_guard import PrisonGuard
 from tarfile import TarFile
 import json
-from .jail_fsm import JailEventWorker
 from . import log
 import signal
 import uvicorn
@@ -22,8 +21,6 @@ DNS_CLIENT = HCloudDNS()
 database = db.DB(os.environ["DATABASE_DSN"])
 
 GUARD = PrisonGuard(database, DNS_CLIENT)
-
-JAIL_EVENT_WORKER = JailEventWorker()
 
 
 @asynccontextmanager

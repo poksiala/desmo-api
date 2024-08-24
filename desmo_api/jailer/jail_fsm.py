@@ -4,17 +4,17 @@ from tilakone import StateMachine, StateChart
 from typing import Awaitable, Callable, Dict
 import os
 
-from . import actions
-from . import db
-from . import models
-from .enums import JailState, JailEvent
+from .. import actions
+from .. import db
+from .. import models
+from ..enums import JailState, JailEvent
 import asyncpg
 from PgQueuer.db import AsyncpgDriver
 from PgQueuer.qm import QueueManager
 from PgQueuer.models import Job as PgQueuerJob
-from . import log
-from .hcloud_dns import HCloudDNS
-from .desmo_api_client import DesmoApiClient
+from .. import log
+from ..hcloud_dns import HCloudDNS
+from ..desmo_api_client import DesmoApiClient
 
 logger = log.get_logger(__name__)
 

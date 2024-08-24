@@ -3,7 +3,7 @@ import asyncio
 import signal
 
 from .api import main
-from .jail_fsm import JailEventWorker
+from .jailer.jail_fsm import JailEventWorker
 from .log import get_logger
 
 logger = get_logger(__name__)
