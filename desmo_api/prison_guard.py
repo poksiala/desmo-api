@@ -1,5 +1,5 @@
 from . import db, hcloud_dns
-from typing import List, Optional, Set
+from typing import Optional, Set
 import secrets
 import os
 import random
@@ -32,8 +32,7 @@ class PrisonGuard:
         self,
         name_prefix: str,
         base: str,
-        packages: List[str],
-        commands: List[str],
+        image_digest: str,
         prison: Optional[str] = None,
         preferred_host: Optional[str] = None,
     ) -> str:
@@ -44,14 +43,9 @@ class PrisonGuard:
         host = self.select_host(preferred_host)
         state = "uninitialized"
 
-        # TODO: Transactions
-        await self._db.insert_jail(name, host, ip, state, base, prison=prison)
-
-        for package in packages:
-            await self._db.insert_jail_package(name, package)
-
-        for i, command in enumerate(commands):
-            await self._db.insert_jail_command(name, command, i)
+        await self._db.insert_jail(
+            name, host, ip, state, base, image_digest, prison=prison
+        )
 
         await self._db.queue_jail_event(name, JailEvent.initialize)
         return name
@@ -61,14 +55,9 @@ class PrisonGuard:
         name: str,
         base: str,
         replicas: int,
-        packages: List[str],
-        commands: List[str],
+        image_digest: str,
     ) -> None:
-        await self._db.insert_prison(name, base, replicas)
-        for package in packages:
-            await self._db.insert_prison_package(name, package)
-        for i, command in enumerate(commands):
-            await self._db.insert_prison_command(name, command, i)
+        await self._db.insert_prison(name, base, replicas, image_digest)
 
     async def remove_jail(self, name: str) -> None:
         await self._db.queue_jail_event(name, JailEvent.remove_jail)
@@ -76,6 +65,7 @@ class PrisonGuard:
     async def reconcile_prison(self, name: str):
         logger.info("Reconciling prison {}", name)
         prison = await self._db.get_prison_or_raise(name)
+        assert prison.image_digest is not None, "Image digest should not be none"
         jails = await self._db.get_prison_jails(name)
         live_jails = [j for j in jails if j.state != "terminated"]
         if len(live_jails) < prison.replicas:
@@ -84,14 +74,11 @@ class PrisonGuard:
                 prison.replicas - len(live_jails),
                 name,
             )
-            packages = await self._db.get_prison_packages(name)
-            commands = await self._db.get_prison_commands(name)
             for i in range(prison.replicas - len(live_jails)):
                 await self.create_jail(
                     name_prefix=name,
                     base=prison.base,
-                    packages=packages,
-                    commands=commands,
+                    image_digest=prison.image_digest,
                     prison=name,
                 )
         elif len(live_jails) > prison.replicas:
@@ -113,7 +100,7 @@ class PrisonGuard:
             for prison in prisons:
                 await self.reconcile_prison(prison.name)
         except Exception as e:
-            logger.error("Prison reconciliation failed", exc_info=e)
+            logger.error("Prison reconciliation failed: {}", e)
         finally:
             # There must be a better way to do this
             await asyncio.sleep(10)

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, validator, Field
+from pydantic import BaseModel, validator
 from typing import Optional, List
 
 from .enums import JailEvent, JailState
@@ -17,19 +17,17 @@ class JailInfo(BaseModel):
     state: JailState
     ip: str
     host: str
+    image_digest: str | None
 
 
 class FullJailInfoResponse(JailInfo):
-    packages: List[str] = []
-    commands: List[str] = []
     dns: str
 
 
 class CreateJailRequest(BaseModel):
     name: str
+    image_digest: str
     base: str = "14.1-RELEASE-base"
-    packages: List[str] = []
-    commands: List[str] = []
 
     @validator("name")
     def server_name_validator(cls, v: str):
@@ -58,6 +56,7 @@ class PrisonInfo(BaseModel):
     replicas: int
     base: str
     name: str
+    image_digest: str | None
 
 
 class PrisonInfoResponse(PrisonInfo):
@@ -79,11 +78,9 @@ class UpdateJailRequest(BaseModel):
     state: JailState
 
 
-class PrisonManifest(BaseModel):
-    packages: List[str]
-    build_commands: List[str] = Field(alias="build-commands")
-    start_command: str = Field(alias="start-command")
-
-
 class CreateJailEventRequest(BaseModel):
     event: JailEvent
+
+
+class DesmofileResponse(BaseModel):
+    content: str

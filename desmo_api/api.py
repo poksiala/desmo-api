@@ -1,7 +1,9 @@
 from fastapi import FastAPI, Header, HTTPException, UploadFile, File
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from typing import Dict, Annotated, Union, List
 from contextlib import asynccontextmanager
+from io import BytesIO
+import pydantic
 
 from desmo_api.enums import JailEvent
 from .hcloud_dns import HCloudDNS
@@ -9,11 +11,11 @@ import os
 from . import db, models
 from .prison_guard import PrisonGuard
 from tarfile import TarFile
-import json
+import hashlib
 from . import log
 import signal
 import uvicorn
-
+import json
 
 logger = log.get_logger(__name__)
 
@@ -56,6 +58,27 @@ async def read_root():
     return RedirectResponse("/docs")
 
 
+@app.get("/desmofile/{digest}")
+async def get_desmofile(digest: str) -> models.DesmofileResponse:
+    content = await database.get_desmofile(digest)
+    if content is None:
+        raise HTTPException(404, "Desmofile not found")
+    return models.DesmofileResponse(content=content)
+
+
+@app.get("/image/{digest}.tar.gz")
+async def get_image_data(digest: str) -> StreamingResponse:
+    data = await database.get_image_data(digest)
+    if data is None:
+        raise HTTPException(404, "File not found")
+    file_obj = BytesIO(data)
+    return StreamingResponse(
+        file_obj,
+        media_type="application/gzip",
+        headers={"Content-Disposition": f"attachment; filename={digest}tar.gz"},
+    )
+
+
 @app.post(
     "/jails",
     status_code=201,
@@ -66,7 +89,7 @@ async def create_jail(
 ) -> models.FullJailInfoResponse:
     if not x_api_key or x_api_key != os.environ["API_KEY"]:
         raise HTTPException(status_code=401, detail="Unauthorized")
-    name = await GUARD.create_jail(req.name, req.base, req.packages, req.commands)
+    name = await GUARD.create_jail(req.name, req.base, req.image_digest)
     jail_info = await database.get_jail(name)
     assert jail_info is not None
     return models.FullJailInfoResponse(
@@ -75,8 +98,7 @@ async def create_jail(
         ip=jail_info.ip,
         host=jail_info.host,
         base=jail_info.base,
-        packages=req.packages,
-        commands=req.commands,
+        image_digest=jail_info.image_digest,
         dns=f"{name}.jail.{os.environ['DNS_ZONE']}",
     )
 
@@ -125,16 +147,13 @@ async def get_jail(name: str) -> models.FullJailInfoResponse:
     jail = await database.get_jail(name)
     if jail is None:
         raise HTTPException(status_code=404, detail="Jail does not exist")
-    packages = await database.get_jail_packages(name)
-    commands = await database.get_jail_commands(name)
     return models.FullJailInfoResponse(
         name=jail.name,
         state=jail.state,
         ip=jail.ip,
         host=jail.host,
         base=jail.base,
-        packages=packages,
-        commands=commands,
+        image_digest=jail.image_digest,
         dns=f"{name}.jail.{os.environ['DNS_ZONE']}",
     )
 
@@ -153,22 +172,61 @@ async def delete_jail(
     return {"status": "ok"}
 
 
-@app.post("/prisons", status_code=201)
-async def create_prison(
-    req: models.CreatePrisonRequest,
+def calculate_sha256(file_obj) -> str:
+    file_obj.seek(0)
+    sha256_hash = hashlib.sha256()
+    for chunk in iter(lambda: file_obj.read(4096), b""):
+        sha256_hash.update(chunk)
+    file_obj.seek(0)
+    return sha256_hash.hexdigest()
+
+
+@app.post("/prisons")
+async def create_prison_from_file(
+    name: str,
+    replicas: int | None = None,
+    base: str | None = None,
+    image: UploadFile = File(...),
     x_api_key: Annotated[Union[str, None], Header()] = None,
-) -> models.PrisonInfoResponse:
+):
     if not x_api_key or x_api_key != os.environ["API_KEY"]:
         raise HTTPException(status_code=401, detail="Unauthorized")
-    await GUARD.create_prison(
-        req.name, req.base, req.replicas, req.packages, req.commands
-    )
+
+    digest = calculate_sha256(image.file)
+
+    try:
+        req = models.CreatePrisonRequest(
+            name=name, image_digest=digest
+        )  # Todo: there is probably a better way to this
+        req = models.CreatePrisonRequest(
+            name=name,
+            image_digest=digest,
+            replicas=replicas or req.replicas,
+            base=base or req.base,
+        )
+    except pydantic.ValidationError as exc:
+        raise HTTPException(400, json.loads(exc.json()))
+
+    with TarFile.open(fileobj=image.file, mode="r:gz") as tar:
+        try:
+            file_obj = tar.extractfile("Desmofile")
+        except KeyError:
+            raise HTTPException(400, "Desmofile is missing")
+        if file_obj is not None:
+            content = file_obj.read().decode()
+        else:
+            raise HTTPException(400, "Invalid Desmofile")
+
+    image.file.seek(0)
+    await database.insert_image(digest, image.file.read(), content)
+    await GUARD.create_prison(req.name, req.base, req.replicas, digest)
     return models.PrisonInfoResponse(
         name=req.name,
         base=req.base,
         replicas=req.replicas,
         dns=f"{req.name}.prison.{os.environ['DNS_ZONE']}",
         jails=[],
+        image_digest=digest,
     )
 
 
@@ -190,6 +248,7 @@ async def get_prison(name: str) -> models.PrisonInfoResponse | Dict[str, str]:
         replicas=prison.replicas,
         dns=f"{name}.prison.{os.environ['DNS_ZONE']}",
         jails=jails,
+        image_digest=prison.image_digest,
     )
 
 
@@ -219,28 +278,6 @@ async def update_prison(
     if req.replicas is not None:
         await GUARD.update_prison_replicas(name, req.replicas)
     return {"status": "ok"}
-
-
-@app.post("/v1/prisons")
-async def create_prisonf_from_file(
-    image: UploadFile = File(...),
-    x_api_key: Annotated[Union[str, None], Header()] = None,
-):
-    if not x_api_key or x_api_key != os.environ["API_KEY"]:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-    with TarFile.open(fileobj=image.file, mode="r") as tar:
-        members = tar.getmembers()
-        try:
-            manifest_json = tar.extractfile("./__desmometa/manifest.json")
-        except KeyError:
-            raise HTTPException(400, "manifest.json is missing")
-    if manifest_json is None:
-        raise HTTPException(400, "Invalid manifest.json")
-
-    manifest = models.PrisonManifest(**json.load(manifest_json))
-
-    names = [member.name for member in members]
-    return {"filename": image.filename, "members": names, "manifest": manifest}
 
 
 async def main():

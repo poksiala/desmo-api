@@ -29,7 +29,7 @@ black = "*"
 
 [tool.poe.tasks]
 jailer  = "python -m desmo_api jailer"
-api     = "python -m desmo_api api"
+api     = "uvicorn --port 8000 --env-file .env --reload desmo_api:app"
 caddy   = "caddy run --config Caddyfile --watch"
 format  = "black desmo_api"
 flake   = "flake8 --max-line-length 88"

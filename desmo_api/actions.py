@@ -126,30 +126,88 @@ async def start_dns_provisioning(clients: Clients, name: str) -> None:
         await clients.api.create_jail_event(name, JailEvent.dns_provisioning_failed)
 
 
-async def jail_setup(
-    jail_info: models.JailInfo, packages: list[str], commands: list[str]
-):
+async def run_jail_cmd(jail_info: models.JailInfo, command: str):
     vars = {
         "jail_host": jail_info.host,
         "jail_name": jail_info.name,
-        "jail_packages": packages,
-        "jail_commands": commands,
+        "jail_command": command,
     }
     inventory = get_inventory(vars)
-    _thread, runner = run_ansible_playbook(jail_info.name, "setup_jail.yaml", inventory)
+    _thread, runner = run_ansible_playbook(jail_info.name, "run_CMD.yaml", inventory)
     while runner.rc is None:
         await asyncio.sleep(1)
     if runner.rc != 0:
         raise Exception(f"Ansible failed with {runner.rc}")
 
 
+async def run_jail_pkg(jail_info: models.JailInfo, packages: list[str]):
+    vars = {
+        "jail_host": jail_info.host,
+        "jail_name": jail_info.name,
+        "jail_packages": packages,
+    }
+    inventory = get_inventory(vars)
+    _thread, runner = run_ansible_playbook(jail_info.name, "run_PKG.yaml", inventory)
+    while runner.rc is None:
+        await asyncio.sleep(1)
+    if runner.rc != 0:
+        raise Exception(f"Ansible failed with {runner.rc}")
+
+
+async def run_jail_copy(
+    jail_info: models.JailInfo,
+    image_url: str,
+    image_digest: str,
+    copy_src: str,
+    copy_dest: str,
+):
+    vars = {
+        "jail_host": jail_info.host,
+        "jail_name": jail_info.name,
+        "image_url": image_url,
+        "image_digest": image_digest,
+        "copy_src": copy_src,
+        "copy_dest": copy_dest,
+    }
+    inventory = get_inventory(vars)
+    _thread, runner = run_ansible_playbook(jail_info.name, "run_COPY.yaml", inventory)
+    while runner.rc is None:
+        await asyncio.sleep(1)
+    if runner.rc != 0:
+        raise Exception(f"Ansible failed with {runner.rc}")
+
+
+async def jail_setup(jail_info: models.JailInfo, clients: Clients):
+    assert jail_info.image_digest is not None, "Image digest does not exist!"
+    desmofile = await clients.api.get_desmofile(jail_info.image_digest)
+    for line in desmofile.split("\n"):
+        logger.info("Processing line {}", line)
+        parts = line.split(" ")
+        if len(parts) == 1 and parts[0] == "":
+            continue
+        elif parts[0] == "PKG":
+            await run_jail_pkg(jail_info=jail_info, packages=parts[1:])
+        elif parts[0] == "CMD" or parts[0] == "ENTRYPOINT":
+            await run_jail_cmd(jail_info=jail_info, command=" ".join(parts[1:]))
+        elif parts[0] == "COPY":
+            image_url = clients.api.format_image_dl_link(jail_info.image_digest)
+            assert len(parts) == 3, "Wrong number of parts for COPY command"
+            await run_jail_copy(
+                jail_info=jail_info,
+                image_url=image_url,
+                image_digest=jail_info.image_digest,
+                copy_src=parts[1],
+                copy_dest=parts[2],
+            )
+        else:
+            raise ValueError(f"Invalid command {parts[0]}")
+
+
 async def start_jail_setup(clients: Clients, name: str) -> None:
     logger.info("Starting jail setup for jail {}", name)
     try:
         jail_info = await clients.api.get_jail_or_raise(name)
-        packages = jail_info.packages
-        commands = jail_info.commands
-        await jail_setup(jail_info=jail_info, packages=packages, commands=commands)
+        await jail_setup(jail_info=jail_info, clients=clients)
         await clients.api.create_jail_event(name, JailEvent.jail_setup_done)
     except Exception as e:
         logger.error("Jail setup failed for jail {}", name, exc_info=e)

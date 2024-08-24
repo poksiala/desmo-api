@@ -1,0 +1,4 @@
+PKG nginx htop
+COPY usr /
+ENTRYPOINT service nginx onestart
+

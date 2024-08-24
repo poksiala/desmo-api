@@ -4,6 +4,14 @@
       become: true
       when: inventory_hostname == jail_host
       block:
+        - name: stop jail
+          ansible.builtin.shell: service jail stop {{ jail_name }}
+
+        - name: wipe jail dataset
+          community.general.zfs:
+            name: "zroot/jails/containers/{{ jail_name }}"
+            state: absent
+
         - name: wipe jail directory
           ansible.builtin.file:
             path: "{{ containers_path }}/{{ jail_name }}"

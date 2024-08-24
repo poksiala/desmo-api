@@ -72,3 +72,13 @@ class DesmoApiClient:
             f"{self._api}/jails/{name}", json=req.model_dump()
         ) as resp:
             resp.raise_for_status()
+
+    async def get_desmofile(self, digest: str) -> str:
+        session = self._get_session()
+        async with session.get(f"{self._api}/desmofile/{digest}") as resp:
+            resp.raise_for_status()
+            data = await resp.json()
+            return models.DesmofileResponse(**data).content
+
+    def format_image_dl_link(self, digest: str) -> str:
+        return f"http://192.168.200.167:8000/image/{digest}.tar.gz"

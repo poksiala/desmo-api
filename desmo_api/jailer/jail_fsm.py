@@ -1,5 +1,4 @@
 import asyncio
-import logging
 from tilakone import StateMachine, StateChart
 from typing import Awaitable, Callable, Dict
 import os
@@ -84,7 +83,7 @@ async def process_jail_event(
     fsm = StateMachine(state_chart, initial_state=jail.state)
     transitioned = fsm.send(event)
     if not transitioned:
-        logging.warning(
+        logger.warning(
             "Discarding irrelevant event `{}` for jail `{}` in state `{}`.",
             event,
             jail_name,

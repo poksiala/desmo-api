@@ -1,0 +1,6 @@
+- hosts: bsd_servers
+  tasks:
+  - name: run commands inside jail
+    ansible.builtin.command: "jexec -u root {{ jail_name }} {{ jail_command }}"
+    become: true
+    when: inventory_hostname == jail_host

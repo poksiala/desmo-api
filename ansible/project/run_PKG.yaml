@@ -1,0 +1,9 @@
+- hosts: bsd_servers
+  tasks:
+    - name: install packages inside jail
+      community.general.pkgng:
+        name: "{{ jail_packages }}"
+        state: present
+        jail: "{{ jail_name }}"
+      become: true
+      when: inventory_hostname == jail_host

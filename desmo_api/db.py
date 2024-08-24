@@ -172,6 +172,27 @@ MIGRATIONS = [
         EXECUTE FUNCTION fn_pgqueuer_changed();
         """,
     ],
+    [
+        """DROP TABLE prison_command;""",
+        """DROP TABLE prison_package;""",
+        """DROP TABLE jail_command;""",
+        """DROP TABLE jail_package;""",
+    ],
+    [
+        """
+        CREATE TABLE image (
+            digest TEXT PRIMARY KEY,
+            data BYTEA,
+            desmofile TEXT
+        );
+        """,
+        """
+        ALTER TABLE jail ADD COLUMN image_digest text DEFAULT NULL;
+        """,
+        """
+        ALTER TABLE prison ADD COLUMN image_digest text DEFAULT NULL;
+        """,
+    ],
 ]
 
 
@@ -219,13 +240,16 @@ class DB:
 
     async def get_jails(self) -> List[models.JailInfo]:
         pool = await self._get_pool()
-        rows = await pool.fetch("SELECT base, name, state, ip, host FROM jail;")
+        rows = await pool.fetch(
+            "SELECT base, name, state, ip, host, image_digest FROM jail;"
+        )
         return [models.JailInfo(**row) for row in rows]
 
     async def get_jail(self, name: str) -> models.JailInfo | None:
         pool = await self._get_pool()
         row = await pool.fetchrow(
-            "SELECT base, name, state, ip, host FROM jail WHERE name = $1;", name
+            "SELECT base, name, state, ip, host, image_digest FROM jail WHERE name = $1;",
+            name,
         )
         return None if row is None else models.JailInfo(**row)
 
@@ -234,21 +258,6 @@ class DB:
         if res is None:
             raise KeyError(f"Jail {name} does not exist in database")
         return res
-
-    async def get_jail_packages(self, name: str) -> List[str]:
-        pool = await self._get_pool()
-        rows = await pool.fetch(
-            "SELECT name FROM jail_package WHERE jail_name = $1;", name
-        )
-        return [row["name"] for row in rows]
-
-    async def get_jail_commands(self, name: str) -> List[str]:
-        pool = await self._get_pool()
-        rows = await pool.fetch(
-            "SELECT command FROM jail_command WHERE jail_name = $1 ORDER BY order_no;",
-            name,
-        )
-        return [row["command"] for row in rows]
 
     async def delete_jail(self, name: str) -> None:
         pool = await self._get_pool()
@@ -259,84 +268,55 @@ class DB:
         await pool.execute("UPDATE jail SET state = $1 WHERE name = $2;", state, name)
 
     async def insert_jail(
-        self, name, host, ip, state, base, prison: Optional[str] = None
+        self,
+        name,
+        host,
+        ip,
+        state,
+        base,
+        image_digest: str,
+        prison: Optional[str] = None,
     ) -> None:
         pool = await self._get_pool()
         await pool.execute(
-            "INSERT INTO jail (name, host, ip, state, base, prison_name) VALUES ($1, $2, $3, $4, $5, $6);",
+            """INSERT INTO jail (
+                    name, host, ip, state, base, prison_name, image_digest
+                ) VALUES (
+                    $1, $2, $3, $4, $5, $6, $7
+                );""",
             name,
             host,
             ip,
             state,
             base,
             prison,
-        )
-
-    async def insert_jail_package(self, name: str, package: str) -> None:
-        pool = await self._get_pool()
-        await pool.execute(
-            "INSERT INTO jail_package (jail_name, name) VALUES ($1, $2);", name, package
-        )
-
-    async def insert_jail_command(self, name: str, command: str, order: int) -> None:
-        pool = await self._get_pool()
-        await pool.execute(
-            "INSERT INTO jail_command (jail_name, command, order_no) VALUES ($1, $2, $3);",
-            name,
-            command,
-            order,
+            image_digest,
         )
 
     async def get_prisons(self) -> List[models.PrisonInfo]:
         pool = await self._get_pool()
-        rows = await pool.fetch("SELECT name, base, replicas FROM prison;")
+        rows = await pool.fetch(
+            "SELECT name, base, replicas, image_digest FROM prison;"
+        )
         return [models.PrisonInfo(**row) for row in rows]
 
-    async def get_prison_packages(self, name: str) -> List[str]:
-        pool = await self._get_pool()
-        rows = await pool.fetch(
-            "SELECT name FROM prison_package WHERE prison_name = $1;", name
-        )
-        return [row["name"] for row in rows]
-
-    async def get_prison_commands(self, name: str) -> List[str]:
-        pool = await self._get_pool()
-        rows = await pool.fetch(
-            "SELECT command FROM prison_command WHERE prison_name = $1 ORDER BY order_no;",
-            name,
-        )
-        return [row["command"] for row in rows]
-
-    async def insert_prison(self, name: str, base: str, replicas: int) -> None:
+    async def insert_prison(
+        self, name: str, base: str, replicas: int, image_digest: str
+    ) -> None:
         pool = await self._get_pool()
         await pool.execute(
-            "INSERT INTO prison (name, base, replicas) VALUES ($1, $2, $3);",
+            "INSERT INTO prison (name, base, replicas, image_digest) VALUES ($1, $2, $3, $4);",
             name,
             base,
             replicas,
-        )
-
-    async def insert_prison_package(self, name: str, package: str) -> None:
-        pool = await self._get_pool()
-        await pool.execute(
-            "INSERT INTO prison_package (prison_name, name) VALUES ($1, $2);",
-            name,
-            package,
-        )
-
-    async def insert_prison_command(self, name: str, command: str, order: int) -> None:
-        pool = await self._get_pool()
-        await pool.execute(
-            "INSERT INTO prison_command (prison_name, command, order_no) VALUES ($1, $2, $3);",
-            name,
-            command,
-            order,
+            image_digest,
         )
 
     async def get_prison(self, name: str) -> models.PrisonInfo | None:
         pool = await self._get_pool()
         row = await pool.fetchrow(
-            "SELECT name, base, replicas FROM prison WHERE name = $1;", name
+            "SELECT name, base, replicas, image_digest FROM prison WHERE name = $1;",
+            name,
         )
         return None if row is None else models.PrisonInfo(**row)
 
@@ -353,7 +333,7 @@ class DB:
     async def get_prison_jails(self, name: str) -> List[models.JailInfo]:
         pool = await self._get_pool()
         rows = await pool.fetch(
-            "SELECT base, name, state, ip, host FROM jail WHERE prison_name = $1;",
+            "SELECT base, name, state, ip, host, image_digest FROM jail WHERE prison_name = $1;",
             name,
         )
         return [models.JailInfo(**row) for row in rows]
@@ -367,6 +347,28 @@ class DB:
     async def clean_jails(self):
         pool = await self._get_pool()
         await pool.execute("DELETE FROM jail WHERE state = $1;", "terminated")
+
+    async def insert_image(self, digest: str, data: bytes, desmofile: str):
+        pool = await self._get_pool()
+        try:
+            await pool.execute(
+                "INSERT INTO image (digest, data, desmofile) VALUES ($1, $2, $3)",
+                digest,
+                data,
+                desmofile,
+            )
+        except asyncpg.exceptions.UniqueViolationError:
+            logger.info("image with digest {} already exists", digest)
+
+    async def get_image_data(self, digest: str) -> bytes | None:
+        pool = await self._get_pool()
+        return await pool.fetchval("SELECT data FROM image WHERE digest = $1;", digest)
+
+    async def get_desmofile(self, digest: str) -> str | None:
+        pool = await self._get_pool()
+        return await pool.fetchval(
+            "SELECT desmofile FROM image WHERE digest = $1;", digest
+        )
 
     async def queue_jail_event(self, jail_name: str, event: enums.JailEvent):
         logger.info("Queueing jail event")

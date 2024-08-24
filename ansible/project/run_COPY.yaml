@@ -1,0 +1,35 @@
+- hosts: bsd_servers
+  tasks:
+    - when: inventory_hostname == jail_host
+      block:
+        - name: Create temporary directory
+          ansible.builtin.tempfile:
+            state: directory
+            suffix: desmo-build
+          register: tempdir
+
+        - name: Create out dir inside tempdir
+          ansible.builtin.file:
+            path: "{{ tempdir.path }}/out"
+            state: directory
+
+        - name: Download tar.gz
+          ansible.builtin.get_url:
+            url: "{{ image_url }}"
+            dest: "{{ tempdir.path }}/{{ image_digest }}.tar.gz"
+
+        - name: Extract tar.gz
+          ansible.builtin.unarchive:
+            src: "{{ tempdir.path }}/{{ image_digest }}.tar.gz"
+            dest: "{{ tempdir.path }}/out/"
+            remote_src: true
+
+        - name: Copy items to jail
+          become: true
+          ansible.builtin.copy:
+            src: "{{ tempdir.path }}/out/{{ copy_src }}"
+            dest: "{{ containers_path }}/{{ jail_name }}{{ copy_dest }}"
+            owner: root
+            group: wheel
+            force: true
+            remote_src: true
