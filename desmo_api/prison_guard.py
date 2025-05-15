@@ -1,13 +1,12 @@
-from . import db, hcloud_dns
-from typing import Optional, Set
-import secrets
+import asyncio
 import os
 import random
-import asyncio
-from .jailer.jail_fsm import JailEventWriter
+import secrets
+from typing import Optional, Set
 
+from . import db, hcloud_dns, log
 from .enums import JailEvent
-from . import log
+from .jailer.jail_fsm import JailEventWriter
 
 logger = log.get_logger(__name__)
 

@@ -1,5 +1,6 @@
+from typing import List, Optional
+
 from pydantic import BaseModel, validator
-from typing import Optional, List
 
 from .enums import JailEvent, JailState
 

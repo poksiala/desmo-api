@@ -1,9 +1,9 @@
 import asyncio
-import aiohttp
+import os
 from typing import Dict, List, Optional
 
+import aiohttp
 from pydantic import BaseModel
-import os
 
 
 class TxtVerification(BaseModel):

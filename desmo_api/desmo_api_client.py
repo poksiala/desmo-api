@@ -1,10 +1,9 @@
 import asyncio
+import os
+
 import aiohttp
 
-import os
-from . import enums
-from . import models
-from . import log
+from . import enums, log, models
 
 logger = log.get_logger(__name__)
 

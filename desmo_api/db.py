@@ -1,9 +1,9 @@
-from typing import List, Optional
 import asyncio
+from typing import List, Optional
+
 import asyncpg
 
-from . import models
-from . import log
+from . import log, models
 
 logger = log.get_logger(__name__)
 

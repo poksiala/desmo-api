@@ -1,16 +1,15 @@
 import asyncio
-from pydantic import ValidationError
-from tilakone import StateMachine, StateChart
-from typing import Awaitable, Callable, Dict, Optional
 import time
+from typing import Awaitable, Callable, Dict, Optional
 
-from .. import actions
-from .. import models
-from ..enums import JailState, JailEvent
-from .. import log
-from ..hcloud_dns import HCloudDNS
-from ..desmo_api_client import DesmoApiClient
 from femtoqueue import FemtoQueue
+from pydantic import ValidationError
+from tilakone import StateChart, StateMachine
+
+from .. import actions, log, models
+from ..desmo_api_client import DesmoApiClient
+from ..enums import JailEvent, JailState
+from ..hcloud_dns import HCloudDNS
 
 logger = log.get_logger(__name__)
 

@@ -2,7 +2,6 @@ import argparse
 import asyncio
 import signal
 
-
 from .jailer.jail_fsm import JailEventWorker
 from .log import get_logger
 
