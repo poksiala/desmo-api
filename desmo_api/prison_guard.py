@@ -4,6 +4,7 @@ import secrets
 import os
 import random
 import asyncio
+from .jailer.jail_fsm import JailEventWriter
 
 from .enums import JailEvent
 from . import log
@@ -12,10 +13,16 @@ logger = log.get_logger(__name__)
 
 
 class PrisonGuard:
-    def __init__(self, database: db.DB, dns_client: hcloud_dns.HCloudDNS):
+    def __init__(
+        self,
+        database: db.DB,
+        dns_client: hcloud_dns.HCloudDNS,
+        jail_event_writer: JailEventWriter,
+    ):
         self._db = database
         self._dns_client = dns_client
         self._tasks: Set[asyncio.Task] = set()
+        self._ew = jail_event_writer
 
     async def initialize(self):
         task = asyncio.create_task(self.reconcile_prisons())
@@ -47,7 +54,7 @@ class PrisonGuard:
             name, host, ip, state, base, image_digest, prison=prison
         )
 
-        await self._db.queue_jail_event(name, JailEvent.initialize)
+        self._ew.push(name, JailEvent.initialize)
         return name
 
     async def create_prison(
@@ -59,8 +66,8 @@ class PrisonGuard:
     ) -> None:
         await self._db.insert_prison(name, base, replicas, image_digest)
 
-    async def remove_jail(self, name: str) -> None:
-        await self._db.queue_jail_event(name, JailEvent.remove_jail)
+    def remove_jail(self, name: str) -> None:
+        self._ew.push(name, JailEvent.remove_jail)
 
     async def reconcile_prison(self, name: str):
         logger.info("Reconciling prison {}", name)
@@ -91,7 +98,7 @@ class PrisonGuard:
 
             random.shuffle(ready_jails)
             for i in range(remove_count):
-                await self.remove_jail(ready_jails[i].name)
+                self.remove_jail(ready_jails[i].name)
 
     async def reconcile_prisons(self):
         try:

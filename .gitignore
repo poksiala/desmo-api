@@ -6,3 +6,5 @@ dist
 secrets.yaml
 desmodev*
 .mypy_cache
+task_data
+.ruff_cache

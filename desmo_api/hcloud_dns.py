@@ -77,7 +77,7 @@ class HCloudDNS:
         if name is not None:
             params["name"] = name
         async with session.get(
-            f"https://{ self.api_domain }/api/v1/zones", params=params
+            f"https://{self.api_domain}/api/v1/zones", params=params
         ) as resp:
             resp.raise_for_status()
             return [ZoneResponse(**zone) for zone in (await resp.json())["zones"]]
@@ -85,7 +85,7 @@ class HCloudDNS:
     async def get_zone(self, zone_id: str) -> ZoneResponse:
         session = self._get_session()
         async with session.get(
-            f"https://{ self.api_domain }/api/v1/zones/{zone_id}"
+            f"https://{self.api_domain}/api/v1/zones/{zone_id}"
         ) as resp:
             resp.raise_for_status()
             return ZoneResponse(**(await resp.json())["zone"])
@@ -102,7 +102,7 @@ class HCloudDNS:
     async def get_all_records(self, zone_id: str) -> List[RecordResponse]:
         session = self._get_session()
         async with session.get(
-            f"https://{ self.api_domain }/api/v1/records", params={"zone_id": zone_id}
+            f"https://{self.api_domain}/api/v1/records", params={"zone_id": zone_id}
         ) as resp:
             resp.raise_for_status()
             data = await resp.json()
@@ -111,7 +111,7 @@ class HCloudDNS:
     async def get_record(self, record_id: str) -> RecordResponse:
         session = self._get_session()
         async with session.get(
-            f"https://{ self.api_domain }/api/v1/records/{record_id}"
+            f"https://{self.api_domain}/api/v1/records/{record_id}"
         ) as resp:
             resp.raise_for_status()
             return RecordResponse(**(await resp.json())["record"])
@@ -125,7 +125,7 @@ class HCloudDNS:
     async def delete_record(self, record_id: str) -> None:
         session = self._get_session()
         async with session.delete(
-            f"https://{ self.api_domain }/api/v1/records/{record_id}"
+            f"https://{self.api_domain}/api/v1/records/{record_id}"
         ) as resp:
             resp.raise_for_status()
             return None
@@ -148,7 +148,7 @@ class HCloudDNS:
         if ttl is not None:
             data["ttl"] = ttl
         async with session.post(
-            f"https://{ self.api_domain }/api/v1/records", json=data
+            f"https://{self.api_domain}/api/v1/records", json=data
         ) as resp:
             resp.raise_for_status()
             return RecordResponse(**(await resp.json())["record"])

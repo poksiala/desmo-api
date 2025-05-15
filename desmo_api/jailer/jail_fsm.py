@@ -1,19 +1,16 @@
 import asyncio
+from pydantic import ValidationError
 from tilakone import StateMachine, StateChart
-from typing import Awaitable, Callable, Dict
-import os
+from typing import Awaitable, Callable, Dict, Optional
+import time
 
 from .. import actions
-from .. import db
 from .. import models
 from ..enums import JailState, JailEvent
-import asyncpg
-from PgQueuer.db import AsyncpgDriver
-from PgQueuer.qm import QueueManager
-from PgQueuer.models import Job as PgQueuerJob
 from .. import log
 from ..hcloud_dns import HCloudDNS
 from ..desmo_api_client import DesmoApiClient
+from femtoqueue import FemtoQueue
 
 logger = log.get_logger(__name__)
 
@@ -101,35 +98,41 @@ async def process_jail_event(
 
 
 class JailEventWorker:
-    def __init__(self):
+    def __init__(self, node_id: str, queue_data_dir: str = "task_data"):
         self._task: asyncio.Task | None = None
-        self._qm: QueueManager | None = None
+        self._qm = FemtoQueue(data_dir=queue_data_dir, node_id=node_id)
+        self._alive = True
 
     async def _process(self):
         logger.info("JailEventWorkerStarted")
-        conn = await asyncpg.connect(os.environ["DATABASE_DSN"])
-        driver = AsyncpgDriver(conn)
-        qm = QueueManager(driver)
-        self._qm = qm
         lock = asyncio.Lock()
         clients = actions.Clients(dns=HCloudDNS(), api=DesmoApiClient())
 
-        @qm.entrypoint(db.JAIL_EVENT_QUEUE)
-        async def process_message(job: PgQueuerJob) -> None:
-            logger.info("Processing job {}", job.model_dump_json())
-            payload = job.payload
-            if payload is None:
-                logger.warning("Job {} payload was none", job.id)
-            else:
-                job_payload = models.JailEventQueueObject.model_validate_json(
-                    payload.decode()
+        while self._alive:
+            task = self._qm.pop()
+            if task is None:
+                await asyncio.sleep(1)
+                continue
+            logger.info("Processing task {}", task.id)
+            try:
+                payload = models.JailEventQueueObject.model_validate_json(
+                    task.data.decode()
                 )
-                async with lock:  # Only process one task at a time at this point
-                    await process_jail_event(
-                        clients, job_payload.name, job_payload.event
-                    )
+                async with lock:
+                    await process_jail_event(clients, payload.name, payload.event)
+                self._qm.done(task)
+            except ValidationError as e:
+                logger.error(
+                    "Event decode failed for event {}. Discarding event.",
+                    task.id,
+                    exec_info=e,
+                )
+            except Exception as e:
+                logger.error(
+                    "Event processing failed for event {}", task.id, exec_info=e
+                )
+                await asyncio.sleep(1)
 
-        await qm.run()
         await clients.stop()
 
     async def run(self):
@@ -141,13 +144,32 @@ class JailEventWorker:
 
     async def stop(self):
         logger.info("Shutting down JailEventWorker")
-        if self._qm is not None:
-            logger.info("Setting alive to false")
-            self._qm.alive = False
+        self._alive = False
         if self._task is not None:
             logger.info("awaiting task")
             await self._task
 
     def start_shutdown(self):
-        if self._qm is not None:
-            self._qm.alive = False
+        self._alive = False
+
+
+class JailEventWriter:
+    # Write only worker
+    def __init__(self, queue_data_dir: str = "task_data"):
+        self._qm = FemtoQueue(data_dir=queue_data_dir, node_id="writer")
+
+    def push(
+        self, jail_name: str, event: JailEvent, delay_seconds: Optional[int] = None
+    ) -> str:
+        ts_us = (
+            int((time.time() + delay_seconds) * 1_000_000) if delay_seconds else None
+        )
+
+        logger.info("Queueing jail event")
+        event_data = (
+            models.JailEventQueueObject(name=jail_name, event=event)
+            .model_dump_json()
+            .encode()
+        )
+
+        return self._qm.push(data=event_data, time_us=ts_us)

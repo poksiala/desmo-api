@@ -17,12 +17,15 @@ import signal
 import uvicorn
 import json
 
+from .jailer.jail_fsm import JailEventWriter
+
 logger = log.get_logger(__name__)
 
 DNS_CLIENT = HCloudDNS()
 database = db.DB(os.environ["DATABASE_DSN"])
 
-GUARD = PrisonGuard(database, DNS_CLIENT)
+JAIL_EVENT_WRITER = JailEventWriter()
+GUARD = PrisonGuard(database, DNS_CLIENT, JAIL_EVENT_WRITER)
 
 
 @asynccontextmanager
@@ -113,7 +116,7 @@ async def create_jail_event(
         raise HTTPException(status_code=401, detail="Unauthorized")
     try:
         _ = await database.get_jail_or_raise(name)
-        await database.queue_jail_event(name, req.event)
+        JAIL_EVENT_WRITER.push(name, req.event)
     except KeyError:
         raise HTTPException(status_code=404, detail="Jail not found")
     return {"status": "ok"}
@@ -125,7 +128,6 @@ async def update_jail(
     req: models.UpdateJailRequest,
     x_api_key: Annotated[Union[str, None], Header()] = None,
 ):
-
     if not x_api_key or x_api_key != os.environ["API_KEY"]:
         raise HTTPException(status_code=401, detail="Unauthorized")
     try:
@@ -166,7 +168,7 @@ async def delete_jail(
         raise HTTPException(status_code=401, detail="Unauthorized")
     try:
         _ = await database.get_jail_or_raise(name)
-        await database.queue_jail_event(name, JailEvent.remove_jail)
+        JAIL_EVENT_WRITER.push(name, JailEvent.remove_jail)
     except KeyError:
         raise HTTPException(status_code=404, detail="Jail not found")
     return {"status": "ok"}
@@ -281,7 +283,6 @@ async def update_prison(
 
 
 async def main():
-
     config = uvicorn.Config("desmo_api.api:app", port=8080, log_level="info")
     server = uvicorn.Server(config)
 
