@@ -22,8 +22,8 @@ from .prison_guard import PrisonGuard
 logger = log.get_logger(__name__)
 
 DNS_CLIENT = HCloudDNS()
-database = db.DB(os.environ["DATABASE_DSN"])
-
+# database = db.DB(os.environ["DATABASE_DSN"])
+database = db.SqliteDB()
 JAIL_EVENT_WRITER = JailEventWriter()
 GUARD = PrisonGuard(database, DNS_CLIENT, JAIL_EVENT_WRITER)
 

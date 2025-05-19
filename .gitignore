@@ -8,3 +8,4 @@ desmodev*
 .mypy_cache
 task_data
 .ruff_cache
+desmo.db
