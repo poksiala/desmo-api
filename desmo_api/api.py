@@ -227,6 +227,7 @@ async def create_prison_from_file(
         base=req.base,
         replicas=req.replicas,
         dns=f"{req.name}.prison.{os.environ['DNS_ZONE']}",
+        headless_svc=f"{req.name}.svc.{os.environ['DNS_ZONE']}",
         jails=[],
         image_digest=digest,
     )
@@ -249,6 +250,7 @@ async def get_prison(name: str) -> models.PrisonInfoResponse | Dict[str, str]:
         base=prison.base,
         replicas=prison.replicas,
         dns=f"{name}.prison.{os.environ['DNS_ZONE']}",
+        headless_svc=f"{name}.svc.{os.environ['DNS_ZONE']}",
         jails=jails,
         image_digest=prison.image_digest,
     )

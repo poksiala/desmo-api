@@ -62,6 +62,7 @@ class PrisonInfo(BaseModel):
 
 class PrisonInfoResponse(PrisonInfo):
     dns: str
+    headless_svc: str
     jails: List[JailInfo] = []
 
 

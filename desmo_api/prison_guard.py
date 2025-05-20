@@ -2,13 +2,43 @@ import asyncio
 import os
 import random
 import secrets
-from typing import Optional, Set
+from typing import Iterable, Optional, Set
+
+from desmo_api.models import JailInfo
 
 from . import db, hcloud_dns, log
-from .enums import JailEvent
+from .enums import JailEvent, JailState
 from .jailer.jail_fsm import JailEventWriter
 
 logger = log.get_logger(__name__)
+
+
+async def update_prison_headless_dns(
+    dns_client: hcloud_dns.HCloudDNS, prison_name: str, jails: Iterable[JailInfo]
+):
+    zone_id = os.environ["HCLOUD_DNS_ZONE_ID"]
+    records = await dns_client.get_records_by_name(zone_id, "{prison_name}.svc")
+    live_jails_ips = [jail.ip for jail in jails if jail.state == JailState.jail_ready]
+    records_to_delete = [
+        record.id for record in records if record.value not in live_jails_ips
+    ]
+    records_to_create = [  # O(n^2)
+        ip for ip in live_jails_ips if ip not in [record.value for record in records]
+    ]
+
+    for record_id in records_to_delete:
+        logger.info("Deleting dns record {} for prison {}", record_id, prison_name)
+        await dns_client.delete_record(record_id=record_id)
+
+    for ip in records_to_create:
+        logger.info("Creating dns record for prison {} (ip: {})", prison_name, ip)
+        await dns_client.create_record(
+            zone_id=zone_id,
+            name="{prison_name}.svc",
+            record_type="AAAA",
+            value=ip,
+            ttl=300,
+        )
 
 
 class PrisonGuard:
@@ -73,7 +103,7 @@ class PrisonGuard:
         prison = await self._db.get_prison_or_raise(name)
         assert prison.image_digest is not None, "Image digest should not be none"
         jails = await self._db.get_prison_jails(name)
-        live_jails = [j for j in jails if j.state != "terminated"]
+        live_jails = [j for j in jails if j.state != JailState.terminated]
         if len(live_jails) < prison.replicas:
             logger.info(
                 "Creating {} jails for prison {}",
@@ -98,6 +128,9 @@ class PrisonGuard:
             random.shuffle(ready_jails)
             for i in range(remove_count):
                 self.remove_jail(ready_jails[i].name)
+
+        # TODO: remove possibly removed jails from the list of live jails.
+        await update_prison_headless_dns(self._dns_client, name, live_jails)
 
     async def reconcile_prisons(self):
         try:
