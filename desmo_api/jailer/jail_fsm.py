@@ -14,6 +14,8 @@ from ..hcloud_dns import HCloudDNS
 logger = log.get_logger(__name__)
 
 
+TASK_TIMEOUT = 5 * 60 * 1000  # Five minutes in milliseconds
+
 state_chart = StateChart[JailState, JailEvent](
     {
         JailState.uninitialized: {
@@ -99,7 +101,9 @@ async def process_jail_event(
 class JailEventWorker:
     def __init__(self, node_id: str, queue_data_dir: str = "task_data"):
         self._task: asyncio.Task | None = None
-        self._qm = FemtoQueue(data_dir=queue_data_dir, node_id=node_id)
+        self._qm = FemtoQueue(
+            data_dir=queue_data_dir, node_id=node_id, timeout_stale_ms=TASK_TIMEOUT
+        )
         self._alive = True
 
     async def _process(self):
@@ -155,7 +159,9 @@ class JailEventWorker:
 class JailEventWriter:
     # Write only worker
     def __init__(self, queue_data_dir: str = "task_data"):
-        self._qm = FemtoQueue(data_dir=queue_data_dir, node_id="writer")
+        self._qm = FemtoQueue(
+            data_dir=queue_data_dir, node_id="writer", timeout_stale_ms=TASK_TIMEOUT
+        )
 
     def push(
         self, jail_name: str, event: JailEvent, delay_seconds: Optional[int] = None
