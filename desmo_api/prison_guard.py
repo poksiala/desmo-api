@@ -122,7 +122,7 @@ class PrisonGuard:
         elif len(live_jails) > prison.replicas:
             remove_count = len(live_jails) - prison.replicas
             logger.info("Trying to remove {} jails for prison {}", remove_count, name)
-            ready_jails = [j for j in live_jails if j.state == "jail_ready"]
+            ready_jails = [j for j in live_jails if j.state == JailState.jail_ready]
             if len(ready_jails) < remove_count:
                 logger.info("Not enough ready jails to remove for prison {}", name)
                 return
