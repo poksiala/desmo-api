@@ -4,6 +4,7 @@ import random
 import secrets
 from typing import Iterable, Optional, Set
 
+from desmo_api.caddy_client import CaddyClient
 from desmo_api.models import JailInfo
 
 from . import db, hcloud_dns, log
@@ -52,6 +53,7 @@ class PrisonGuard:
         self._dns_client = dns_client
         self._tasks: Set[asyncio.Task] = set()
         self._ew = jail_event_writer
+        self._caddy = CaddyClient()
 
     async def initialize(self):
         task = asyncio.create_task(self.reconcile_prisons())
@@ -131,6 +133,7 @@ class PrisonGuard:
 
         # TODO: remove possibly removed jails from the list of live jails.
         await update_prison_headless_dns(self._dns_client, name, live_jails)
+        await self._caddy.add_or_update_prison(prison, 8080)
 
     async def reconcile_prisons(self):
         try:
